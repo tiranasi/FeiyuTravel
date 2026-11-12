@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>旅行肥鱼 · 本机预览</title>
+<link rel="stylesheet" href="/web/lvfeiyu.css">
+</head>
+<body>
+<main>
+  <canvas id="stage" width="480" height="320"></canvas>
+  <div class="controls">
+    <button data-key="up">前滑 ↑</button>
+    <button data-key="down">后滑 ↓</button>
+    <button data-key="ok">单击 ⏎</button>
+    <button data-key="back">双击 ⌫</button>
+    <button data-key="wake">语音唤醒 V</button>
+    <label><input type="checkbox" id="fast"> 时间×120</label>
+    <button data-key="reset">清空存档</button>
+  </div>
+  <form id="asr" hidden><input id="asr-text" placeholder="模拟语音输入，回车结束" autocomplete="off"><button>说完</button></form>
+  <p class="note">本机预览：同一份 lib/ 代码。语音识别与模型由输入框模拟（离线本地台词），不代表眼镜效果。</p>
+</main>
+<script type="module" src="/web/lvfeiyu-preview.js"></script>
+</body>
+</html>

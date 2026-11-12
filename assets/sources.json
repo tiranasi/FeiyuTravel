@@ -1,0 +1,20 @@
+﻿[
+    {
+        "id":  "a",
+        "name":  "棣栫増閫犲瀷",
+        "source":  "exec-bdb6440f-03c5-4682-a9e3-a31028b9e111.png",
+        "width":  384,
+        "height":  512,
+        "frames":  8,
+        "treatment":  "Original pixels and alpha, only split into 4x2 cells; no brightness, fill, outline or color changes."
+    },
+    {
+        "id":  "b",
+        "name":  "鐜版湁濉壊",
+        "source":  "exec-160227e0-aa9b-42bb-9b51-0c8795fbde93.png",
+        "width":  384,
+        "height":  512,
+        "frames":  8,
+        "treatment":  "Original pixels and alpha, only split into 4x2 cells; no brightness, fill, outline or color changes."
+    }
+]

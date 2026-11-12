@@ -1,0 +1,20 @@
+{
+  "name": "lvfeiyu",
+  "displayName": "旅行肥鱼",
+  "agentName": "旅行肥鱼",
+  "agentDesc": "住在眼镜里的全息桌宠大肥鱼：发呆、眺望、聊天，背上行囊去旅行并带回礼物",
+  "agentPrompt": "这是本地单机桌宠游戏旅行肥鱼。打开 pages/home/index 即可进入；存档保存在本机。用户想和大肥鱼聊天、看她旅行、查看明信片或纪念品时打开该页面。",
+  "version": "0.3.0",
+  "type": "aiui",
+  "pages": ["pages/home/index"],
+  "entryPagePath": "pages/home/index",
+  "viewport": {"width":480,"height":320},
+  "window": {
+    "navigationStyle": "custom",
+    "backgroundColor": "#000000",
+    "navigationBarTitleText": "旅行肥鱼",
+    "navigationBarBackgroundColor": "#000000",
+    "navigationBarTextStyle": "white"
+  },
+  "permissions": ["network","microphone","audio","RECORD_AUDIO"]
+}

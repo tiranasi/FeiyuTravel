@@ -1,0 +1,6 @@
+{
+  "name":"dafeiyu-runtime-probe","displayName":"大肥鱼运行诊断","agentName":"大肥鱼运行诊断",
+  "agentDesc":"独立诊断会话上下文与少量成就存档","agentPrompt":"独立的开发诊断页面，不读取其他应用数据。",
+  "version":"0.1.0","type":"aiui","pages":["pages/index/index"],"entryPagePath":"pages/index/index",
+  "viewport":{"width":480,"height":320},"window":{"navigationStyle":"custom","backgroundColor":"#000000"},"permissions":[]
+}

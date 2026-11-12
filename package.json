@@ -1,0 +1,22 @@
+{
+  "name": "dafeiyu-display-lab",
+  "version": "0.3.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node web/serve.mjs",
+    "test:web": "node --test web/tests/*.test.mjs",
+    "test:browser": "node web/tests/pocket-browser.mjs",
+    "test:archive": "node web/tests/game-browser.mjs",
+    "test:hologram": "node web/tests/hologram-browser.mjs",
+    "prepare:canvas": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-canvas.ps1",
+    "check": "node scripts/aix.mjs check",
+    "pack": "node scripts/aix.mjs pack",
+    "install": "node scripts/aix.mjs install",
+    "launch": "node scripts/aix.mjs launch",
+    "test:lvfeiyu": "node --test tests/lvfeiyu.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.0"
+  }
+}

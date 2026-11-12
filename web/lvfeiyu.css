@@ -1,0 +1,7 @@
+body { margin: 0; background: #111; color: #9fdcaa; font: 14px sans-serif; }
+main { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px; }
+#stage { width: min(960px, calc(100vw - 24px)); aspect-ratio: 3 / 2; height: auto; background: #000; image-rendering: auto; border: 1px solid #234; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+button { background: #0b1a0e; color: #6f6; border: 1px solid #2a5; padding: 6px 12px; cursor: pointer; }
+#asr input { width: 420px; padding: 6px; background: #000; color: #6f6; border: 1px solid #2a5; }
+.note { color: #577; font-size: 12px; }
