@@ -3,6 +3,7 @@
 住在 Rokid 眼镜里的全息桌宠大肥鱼，版本 0.4.0，画布 480×320，单绿透明显示。打开后先进入游戏首页（进入游戏 / 教程 / 语音开关），进入游戏后播放全息载入动画。主页上她在角落发呆、眺望、追泡泡、打盹、哼歌；呼唤后瞬移到近处，可以聊天、摸头、戳戳；放好便当，她会自己去旅行，寄回明信片、带回纪念品。存档保存在本机。
 
 - 设计、经济、代码结构与真机验证：[docs/LVFEIYU.md](docs/LVFEIYU.md)
+- Q 版动画素材清单与给图像模型的绘制交接：[docs/ART-HANDOFF-QBAN.md](docs/ART-HANDOFF-QBAN.md)
 - 本机预览：`npm run dev`，打开 <http://127.0.0.1:4173/>（加 `?fast=1` 让时间加速）
 - 检查：`npm run check`（配置、语法、Canvas 白名单、18 项测试）
 - 真机：`npm run install -- --params '{"debug":"fast"}'`，以及 `npm run launch`
