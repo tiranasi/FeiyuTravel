@@ -118,6 +118,62 @@ function listen(handlers) {
   };
 }
 
+// 语音播报：优先 synthesize + SpeechAudioPlayer（可随时停止），失败时退回 speak。
+// 音色与音量来自 aiui-dev 文档；真机是否出声、音量是否合适需佩戴者确认。
+const TTS_VOICE = 'female-tianmei';
+const TTS_VOLUME = 3;
+const speech = {
+  token: 0,
+  player: null,
+  speak(value) {
+    this.stop();
+    const synth = typeof speechSynthesis !== 'undefined' ? speechSynthesis : null;
+    const Utterance = typeof SpeechSynthesisUtterance !== 'undefined' ? SpeechSynthesisUtterance : null;
+    if (!synth || !Utterance) { log('tts unavailable'); return; }
+    const token = ++this.token;
+    const utterance = new Utterance(value);
+    try { utterance.voice = TTS_VOICE; utterance.volume = TTS_VOLUME; } catch (error) { log('tts option', errorText(error)); }
+    const fallback = () => {
+      try { synth.speak(utterance, 'immediate'); log('tts speak', value.length); } catch (error) { log('tts speak failed', errorText(error)); }
+    };
+    if (typeof synth.synthesize === 'function' && typeof SpeechAudioPlayer !== 'undefined') {
+      try {
+        Promise.resolve(synth.synthesize(utterance, { subtitles: 'none' })).then(task => {
+          if (!task) return;
+          if (token !== this.token) { try { task.abort && task.abort(); } catch (error) { /* ignore */ } return; }
+          const player = new SpeechAudioPlayer(task);
+          this.player = player;
+          player.play();
+          log('tts play', value.length, String(task.state || ''));
+          setTimeout(() => {
+            if (this.player !== player) return;
+            try { log('tts state', JSON.stringify({ paused: player.paused, t: player.currentTime, d: player.duration })); } catch (error) { /* ignore */ }
+          }, 2500);
+        }).catch(error => {
+          log('tts synthesize failed', errorText(error));
+          if (token === this.token) fallback();
+        });
+        return;
+      } catch (error) {
+        log('tts synthesize threw', errorText(error));
+      }
+    }
+    fallback();
+  },
+  stop() {
+    this.token += 1;
+    const player = this.player;
+    this.player = null;
+    if (!player) return;
+    try {
+      if (typeof player.stop === 'function') player.stop();
+      if (typeof player.destroy === 'function') player.destroy();
+    } catch (error) {
+      log('tts stop ignored', errorText(error));
+    }
+  }
+};
+
 const chat = {
   async create(system) {
     if (typeof LanguageModel === 'undefined' || !LanguageModel || typeof LanguageModel.create !== 'function') return null;
@@ -161,8 +217,12 @@ export default {
       setTimeout: (fn, ms) => setTimeout(fn, ms),
       clearTimeout: id => clearTimeout(id),
       listen,
-      chat
+      chat,
+      speech
     });
+    if (typeof this.enableWorldAwareness === 'function') {
+      try { this.enableWorldAwareness(); log('world awareness on'); } catch (error) { log('world awareness unavailable', errorText(error)); }
+    }
     this.visible = true;
     this.shownAt = Date.now();
   },
@@ -175,7 +235,7 @@ export default {
   },
   onReady() { this.ready = true; this.loop(); },
   onHide() { log('hide'); this.visible = false; this.stop(); if (this.app) this.app.hide(); },
-  onUnload() { log('unload'); this.visible = false; this.stop(); if (this.app) this.app.hide(); },
+  onUnload() { log('unload'); this.visible = false; this.stop(); if (this.app) this.app.hide(); speech.stop(); },
   stop() {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
@@ -203,6 +263,11 @@ export default {
     if (cost > FRAME_MS) this.slowFrames += 1;
     if (this.frames % 250 === 1) log('perf', JSON.stringify({ frames: this.frames, avg: Math.round(this.costSum / Math.max(1, this.frames)), slow: this.slowFrames, screen: this.app.view.screen }));
     this.timer = setTimeout(() => { this.timer = null; this.loop(); }, Math.max(8, (ctx ? FRAME_MS : 80) - cost));
+  },
+  onHeadGesture(event) {
+    const gesture = event && (event.gesture || event.type);
+    log('head gesture', String(gesture));
+    if (this.visible && this.app && gesture === 'nod') this.app.nod();
   },
   onVoiceWakeup(event) {
     if (!this.visible || !this.app) return;

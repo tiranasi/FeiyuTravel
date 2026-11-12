@@ -5,7 +5,7 @@ import * as Game from '../lib/game.js';
 import { createApp, parseReply } from '../lib/app.js';
 import { createDecoder, SPRITE_ORDER } from '../lib/sprites.js';
 import { SPRITES } from '../lib/sprite-data.js';
-import { DESTS, ITEMS } from '../lib/content.js';
+import { DESTS, ITEMS, speechText } from '../lib/content.js';
 
 const MIN = 60000;
 const T0 = new Date(2026, 10, 12, 9, 0, 0).getTime();
@@ -194,12 +194,13 @@ function fakeCtx(stats) {
   });
 }
 
-test('全流程冒烟：开机 → 主页 → 召唤 → 菜单 → 旅行 → 礼物，所有画面可绘制', async () => {
+
+// 测试宿主：假时钟、假计时器、可观察的聆听与朗读。
+function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！' } = {}) {
   let clock = T0;
-  const store = new Map();
   const timers = [];
   class FakeCanvas { constructor(w, h) { this.w = w; this.h = h; } getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {}, flush() {} }; } }
-  let listenHandlers = null;
+  const h = { listenHandlers: null, spoken: [], speaking: false, listenWhileSpeaking: 0, store };
   const app = createApp({
     now: () => clock,
     storage: { get: k => store.get(k), set: (k, v) => store.set(k, v) },
@@ -209,8 +210,13 @@ test('全流程冒烟：开机 → 主页 → 召唤 → 菜单 → 旅行 → �
     decodeBudgetMs: 1e9,
     setTimeout: (fn, ms) => { timers.push({ at: clock + ms, fn }); return timers.length; },
     clearTimeout: () => {},
-    listen: handlers => { listenHandlers = handlers; return { stop() { handlers.onEnd('你好呀'); }, abort() { listenHandlers = null; } }; },
-    chat: { create: async () => ({}), prompt: async () => '[惊讶]你来啦！', destroy() {} }
+    listen: handlers => {
+      if (h.speaking) h.listenWhileSpeaking += 1;
+      h.listenHandlers = handlers;
+      return { stop() { handlers.onEnd('你好呀'); }, abort() { h.listenHandlers = null; } };
+    },
+    chat: { create: async () => ({}), prompt: async () => voiceReply, destroy() {} },
+    speech: { speak(text) { h.spoken.push(text); h.speaking = true; }, stop() { h.speaking = false; } }
   });
   const stats = {};
   const ctx = fakeCtx(stats);
@@ -223,19 +229,111 @@ test('全流程冒烟：开机 → 主页 → 召唤 → 菜单 → 旅行 → �
     screens.add(app.view.screen);
   };
   const run = (ms, frame = 40) => { for (let t = 0; t < ms; t += frame) step(frame); };
-  run(7000);
+  return Object.assign(h, { app, stats, screens, step, run });
+}
+
+test('首页：新档默认停在教程，返回键交给宿主退出', () => {
+  const h = harness();
+  h.run(800);
+  assert.equal(h.app.view.screen, 'title');
+  assert.equal(h.app.view.title.focus, 1, '新档推荐教程');
+  assert.equal(h.app.back(), false);
+  h.app.swipe(1);
+  h.app.confirm();
+  h.run(200);
+  assert.equal(h.app.view.g.settings.voice, false, '语音开关');
+  assert.equal(h.spoken.length, 0, '关闭语音后不朗读');
+  h.app.confirm();
+  assert.equal(h.app.view.g.settings.voice, true);
+});
+
+test('教程：每步需要真实操作，完成后记录并进入载入动画', () => {
+  const h = harness();
+  h.run(800);
+  h.app.confirm();
+  assert.equal(h.app.view.screen, 'tutorial');
+  assert.ok(h.spoken[0].startsWith('你好，我是大肥鱼'), '朗读教程');
+  h.run(500); h.app.confirm();
+  assert.equal(h.app.view.tut.step, 1);
+  h.run(500); h.app.confirm();
+  assert.equal(h.app.view.tut.step, 1, '滑动步骤不能用单击跳过');
+  h.app.swipe(1); h.run(100);
+  assert.equal(h.app.view.tut.step, 1);
+  h.app.swipe(-1); h.run(1000);
+  assert.equal(h.app.view.tut.step, 2, '滑两下过关');
+  assert.ok(h.app.back(), '返回步骤消费返回键');
+  h.run(1000);
+  assert.equal(h.app.view.tut.step, 3);
+  for (let i = 3; i < 6; i += 1) { h.run(500); h.app.confirm(); }
+  assert.equal(h.app.view.screen, 'boot');
+  assert.equal(h.app.view.g.tutorialDone, true);
+  h.run(7000);
+  assert.equal(h.app.view.screen, 'home');
+  // 回到首页后默认“进入游戏”
+  assert.ok(h.app.back());
+  assert.equal(h.app.view.screen, 'title');
+  assert.equal(h.app.view.title.focus, 0);
+  assert.equal(JSON.parse(h.store.get(Game.SAVE_KEY)).tutorialDone, true);
+});
+
+test('教程中途返回回到首页，不记录完成', () => {
+  const h = harness();
+  h.run(800);
+  h.app.confirm();
+  h.run(500); h.app.confirm();
+  assert.ok(h.app.back());
+  assert.equal(h.app.view.screen, 'title');
+  assert.equal(h.app.view.g.tutorialDone, false);
+});
+
+test('首页语音唤醒：直接载入并瞬移聆听，聆听时从不朗读', async () => {
+  const h = harness();
+  h.run(800);
+  h.app.voiceWake();
+  assert.equal(h.app.view.screen, 'boot');
+  h.run(9000);
+  assert.equal(h.app.view.screen, 'close');
+  assert.equal(h.app.view.close.phase, 'listening');
+  assert.equal(h.spoken.length, 0, '语音唤醒后不朗读招呼语');
+  h.listenHandlers.onEnd('今天去哪');
+  await new Promise(resolve => setImmediate(resolve));
+  h.run(200);
+  assert.equal(h.spoken.at(-1), '你来啦！', '朗读去掉心情标签');
+  assert.ok(h.speaking);
+  h.app.confirm(); // 说话：先停播再聆听
+  h.run(100);
+  assert.equal(h.app.view.close.phase, 'listening');
+  assert.equal(h.listenWhileSpeaking, 0);
+  h.app.hide();
+  assert.equal(h.speaking, false, '隐藏时停播');
+});
+
+test('朗读文本清理', () => {
+  assert.equal(speechText('[开心]嘿嘿…再摸一下♪'), '嘿嘿，再摸一下');
+  assert.equal(speechText('咻——到！'), '咻到！');
+  assert.equal(speechText('选「呼唤」'), '选呼唤');
+  assert.ok(speechText('长'.repeat(100)).length <= 60);
+});
+
+test('全流程冒烟：首页 → 载入 → 主页 → 召唤 → 菜单 → 旅行 → 礼物 → 明信片，所有画面可绘制', async () => {
+  const h = harness();
+  const { app, run, step, stats, screens } = h;
+  run(800);
+  app.view.title.focus = 0;
+  app.confirm();
+  run(7400);
   assert.equal(app.view.screen, 'home');
   run(1200);
-  // 召唤与对话
   app.confirm();
   run(1500);
   assert.equal(app.view.screen, 'close');
+  assert.ok(h.spoken.length >= 1, '点按呼唤会朗读招呼');
   app.confirm();
   run(200);
   assert.equal(app.view.close.phase, 'listening');
-  listenHandlers.onPartial('你好');
+  h.listenHandlers.onPartial('你好');
   run(200);
-  listenHandlers.onEnd('你好呀');
+  h.listenHandlers.onEnd('你好呀');
   await new Promise(resolve => setImmediate(resolve));
   run(400);
   assert.equal(app.view.close.bubble.text, '你来啦！');
@@ -245,7 +343,6 @@ test('全流程冒烟：开机 → 主页 → 召唤 → 菜单 → 旅行 → �
   assert.ok(app.back());
   run(1500);
   assert.equal(app.view.screen, 'home');
-  // 所有菜单
   for (const id of ['shop', 'pack', 'album', 'dex']) {
     app.view.dockFocus = app.view.dock.findIndex(d => d.id === id);
     app.confirm();
@@ -254,7 +351,6 @@ test('全流程冒烟：开机 → 主页 → 召唤 → 菜单 → 旅行 → �
     assert.ok(app.back());
     step(40);
   }
-  // 打包出发
   app.view.dockFocus = app.view.dock.findIndex(d => d.id === 'pack');
   app.confirm();
   app.confirm();
@@ -264,21 +360,37 @@ test('全流程冒烟：开机 → 主页 → 召唤 → 菜单 → 旅行 → �
   assert.ok(app.view.g.trip, '已经出发');
   run(30000, 200);
   assert.equal(app.view.screen, 'gift');
+  assert.ok(h.spoken.at(-1).startsWith('我回来啦'), '归来朗读');
   run(1200);
   app.confirm();
   assert.equal(app.view.screen, 'home');
   assert.equal(Object.keys(app.view.g.souvenirs).length, 1);
-  // 明信片
   app.view.dockFocus = app.view.dock.findIndex(d => d.id === 'album');
   app.confirm();
   app.confirm();
   assert.equal(app.view.screen, 'postcard');
   for (let i = 0; i < 30; i += 1) step(40);
   app.back(); app.back();
-  // 长时间主页：角落行为与传送
+  run(1500);
+  app.nod();
+  run(1500);
+  assert.equal(app.view.screen, 'close', '点头呼唤');
+  app.back();
   run(120000, 120);
   app.hide();
-  assert.ok(store.get(Game.SAVE_KEY));
-  for (const name of ['boot', 'home', 'close', 'menu', 'gift', 'postcard']) assert.ok(screens.has(name), name);
+  assert.ok(h.store.get(Game.SAVE_KEY));
+  for (const name of ['title', 'boot', 'home', 'close', 'menu', 'gift', 'postcard']) assert.ok(screens.has(name), name);
   assert.ok(stats.drawImage > 100 && stats.clip > 0);
+});
+
+test('教程所有步骤可绘制', () => {
+  const h = harness();
+  h.run(800);
+  h.app.confirm();
+  for (let s = 0; s < 6; s += 1) {
+    h.app.view.tut.step = s;
+    h.app.view.tut.at = h.app.view.now;
+    h.run(4000, 80);
+  }
+  assert.ok(h.screens.has('tutorial'));
 });

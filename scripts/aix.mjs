@@ -17,7 +17,7 @@ function run(command,args,capture=false,input){
 }
 const aix=(args,capture=false)=>run(process.execPath,[cli,...args],capture);
 const PERMISSIONS=['network','microphone','audio','RECORD_AUDIO'];
-const LIB=['app.js','content.js','draw.js','game.js','postcards.js','scenes.js','sprite-data.js','sprites.js'];
+const LIB=['app.js','content.js','draw.js','game.js','postcards.js','scenes.js','sprite-data.js','sprites.js','title.js'];
 // 新页面只允许调用真机已画出的 Canvas 方法。
 const UNVERIFIED=/ctx\.(?:scale|rect|ellipse|translate|transform|setTransform|getImageData|createPattern)\s*\(|globalCompositeOperation\s*=\s*['"]lighter/;
 async function check(){
@@ -42,7 +42,7 @@ async function check(){
     assert.ok(!/\b(?:document|localStorage|window)\./.test(src),`${file} must not touch DOM/localStorage`);
   }
   run(process.execPath,['--test','tests/lvfeiyu.test.mjs'],true);
-  console.log('PASS: 旅行肥鱼 page, shared lib syntax, Canvas whitelist, 12 logic/render tests, permissions '+PERMISSIONS.join(','));
+  console.log('PASS: 旅行肥鱼 page, shared lib syntax, Canvas whitelist, logic/render tests, permissions '+PERMISSIONS.join(','));
 }
 async function prepare(){
   await fs.mkdir(stage,{recursive:true});

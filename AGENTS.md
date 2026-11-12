@@ -5,9 +5,10 @@
 - 游戏内文字全部使用中文。
 - 互动中的角色样貌必须来自用户的 Q 版三视图（正、侧、背、四个表情胸像）。载入页的成年托腮全息像只用于载入动画。
 - 精灵由 `tools-art/convert.py` 生成到 `lib/sprite-data.js`，不要手改。
-- 共享代码 `lib/app.js`、`game.js`、`content.js`、`scenes.js`、`draw.js`、`postcards.js`、`sprites.js` 不依赖 DOM 或 localStorage，宿主能力通过 `createApp(host)` 注入。
+- 共享代码 `lib/app.js`、`game.js`、`content.js`、`scenes.js`、`title.js`、`draw.js`、`postcards.js`、`sprites.js` 不依赖 DOM 或 localStorage，宿主能力（存储、聆听、模型、朗读）通过 `createApp(host)` 注入。新增 lib 文件要同时加进 `scripts/aix.mjs` 的 LIB 列表。
+- 0.4.0 新增游戏首页与互动教程，TTS 用 `host.speech`。开始聆听前必须停播；主页自言自语不出声；不做常驻聆听（用户已明确不要）。系统唤醒词无法修改。
 - 只使用真机已画出的 Canvas 方法；`npm run check` 会扫描禁用调用，并运行 `tests/lvfeiyu.test.mjs`。
-- 修改后运行 `npm run check`。`npm run install -- --params '{"debug":"fast"}'` 安装并以 120 倍时间启动；加 `"reset":"1"` 清档。
+- 本目录是 Git 仓库，远端为 GitHub `tiranasi/FeiyuTravel`。修改后运行 `npm run check`，然后提交并推送。`npm run install -- --params '{"debug":"fast"}'` 安装并以 120 倍时间启动；加 `"reset":"1"` 清档。
 - 设备结论按“截图已渲染 / 日志已执行 / 佩戴者反馈”分别记录。
 - 旧页面 `pages/canvas`、`pages/index` 以及 `web/` 下的旧原型和存档保留不删，但不再打包。
 

@@ -31,7 +31,19 @@ const app = createApp({
     asrText.focus();
     return { stop() { finish(); }, abort() { asrHandlers = null; asrForm.hidden = true; } };
   },
-  chat: null
+  chat: null,
+  // 本机预览：用浏览器语音朗读，仅供试听节奏，不代表眼镜音色
+  speech: {
+    speak(value) {
+      console.log('[LVFY] tts', value);
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(value);
+      u.lang = 'zh-CN';
+      window.speechSynthesis.speak(u);
+    },
+    stop() { if (window.speechSynthesis) window.speechSynthesis.cancel(); }
+  }
 });
 function finish() {
   const handlers = asrHandlers;
@@ -49,13 +61,14 @@ const act = key => {
   else if (key === 'ok') app.confirm();
   else if (key === 'back') app.back();
   else if (key === 'wake') app.voiceWake();
+  else if (key === 'nod') app.nod();
   else if (key === 'reset') { localStorage.removeItem(SAVE_KEY); location.reload(); }
 };
 document.querySelectorAll('[data-key]').forEach(button => button.addEventListener('click', () => act(button.dataset.key)));
 fast.addEventListener('change', () => { params.set('fast', fast.checked ? '1' : '0'); location.search = params.toString(); });
 document.addEventListener('keydown', event => {
   if (event.target === asrText) return;
-  const map = { ArrowUp: 'up', ArrowDown: 'down', Enter: 'ok', Backspace: 'back', v: 'wake', V: 'wake' };
+  const map = { ArrowUp: 'up', ArrowDown: 'down', Enter: 'ok', Backspace: 'back', v: 'wake', V: 'wake', n: 'nod', N: 'nod' };
   if (map[event.key]) { event.preventDefault(); act(map[event.key]); }
 });
 stage.addEventListener('click', () => app.confirm());
