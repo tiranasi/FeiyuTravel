@@ -64,7 +64,7 @@
 | `lib/scenes.js` / `draw.js` / `postcards.js` | 渲染 |
 | `lib/title.js` | 游戏首页与教程渲染 |
 | `lib/sprites.js` / `sprite-data.js` | 单通道亮度精灵（base64），运行时按帧预算分块解码成离屏 Canvas |
-| `tools-art/convert.py` | 从三视图与线稿生成精灵：`PYTHONPATH=build/pylibs python tools-art/convert.py` |
+| `tools-art/convert.py` | 从正常色 Q 版素材与线稿生成精灵（v2：剪影轮廓、勾线、分类淡填色，参数集中在 `PARAMS`）：`PYTHONPATH=build/pylibs python tools-art/convert.py`；新批次网格图用 `--sheet`，见 `docs/ART-HANDOFF-QBAN.md` |
 | `web/lvfeiyu.html` | 本机预览外壳（`npm run dev`，`?fast=1`），不打入 AIX |
 | `tests/lvfeiyu.test.mjs` | 18 项测试：规则、存档、解码、首页、教程、朗读与聆听互斥、全流程冒烟 |
 
