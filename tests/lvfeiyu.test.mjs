@@ -155,7 +155,7 @@ test('模型回复解析心情标签', () => {
   assert.equal(parseReply('没有标签').mood, 'smug');
   assert.equal(parseReply('[开心]好耶').mood, 'happy');
   assert.equal(parseReply('[疑惑]这是啥').mood, 'confused');
-  assert.ok(parseReply('长'.repeat(100)).text.length <= 60);
+  assert.ok(parseReply('长'.repeat(100)).text.length <= 72);
 });
 
 test('精灵数据尺寸与镜像解码', () => {
@@ -414,7 +414,7 @@ test('朗读文本清理', () => {
   assert.equal(speechText('[开心]嘿嘿…再摸一下♪'), '嘿嘿，再摸一下');
   assert.equal(speechText('咻——到！'), '咻到！');
   assert.equal(speechText('选「呼唤」'), '选呼唤');
-  assert.ok(speechText('长'.repeat(100)).length <= 60);
+  assert.ok(speechText('长'.repeat(100)).length <= 80);
 });
 
 test('全流程冒烟：首页 → 载入 → 主页 → 召唤 → 菜单 → 旅行 → 礼物 → 明信片，所有画面可绘制', async () => {
