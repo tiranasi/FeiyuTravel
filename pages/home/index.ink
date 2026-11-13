@@ -20,6 +20,7 @@ import { LanguageModel } from 'language-model';
 import { createApp } from '../../lib/app.js';
 import { createDecoder } from '../../lib/sprites.js';
 import { SAVE_KEY } from '../../lib/game.js';
+import { capturePhoto, shrinkPhoto, toDataUrl, IMAGE_MAX_EDGE, IMAGE_QUALITY } from '../../lib/camera.js';
 
 const FRAME_MS = 40;
 const WAKE_GUARD_MS = 2500;
@@ -184,6 +185,25 @@ const chat = {
   destroy(session) { try { if (session && session.destroy) session.destroy(); } catch (error) { log('session destroy', errorText(error)); } }
 };
 
+// 看看（识图）：拍照路径与带图提问格式沿用义眼盯真真机走通的实现。
+// shoot() 必须在按键调用栈里被同步调用：capturePhoto 内第一个 await 之前就已调用 getUserMedia。
+const vision = {
+  shoot(options) {
+    const started = Date.now();
+    return capturePhoto(wx, options, log).then(photo => {
+      log('look captured', JSON.stringify({ ms: Date.now() - started, bytes: photo.buffer.byteLength, source: photo.source }));
+      return shrinkPhoto(photo, IMAGE_MAX_EDGE, IMAGE_QUALITY, log);
+    }).then(photo => toDataUrl(photo, wx, log));
+  },
+  create(system) { return chat.create(system); },
+  prompt(session, question, url, ms) {
+    const started = Date.now();
+    return withTimeout(session.prompt([{ role: 'user', content: [{ type: 'text', text: question }, { type: 'image_url', image_url: { url } }] }]), ms)
+      .then(raw => { log('look model', JSON.stringify({ ms: Date.now() - started })); return raw; });
+  },
+  destroy(session) { chat.destroy(session); }
+};
+
 export default {
   data: { message: '' },
   app: null,
@@ -218,6 +238,7 @@ export default {
       clearTimeout: id => clearTimeout(id),
       listen,
       chat,
+      vision,
       speech
     });
     if (typeof this.enableWorldAwareness === 'function') {

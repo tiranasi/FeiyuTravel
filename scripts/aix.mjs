@@ -16,8 +16,8 @@ function run(command,args,capture=false,input){
   return r.stdout;
 }
 const aix=(args,capture=false)=>run(process.execPath,[cli,...args],capture);
-const PERMISSIONS=['network','microphone','audio','RECORD_AUDIO'];
-const LIB=['app.js','content.js','draw.js','game.js','postcards.js','scenes.js','sprite-data.js','sprites.js','title.js'];
+const PERMISSIONS=['network','microphone','audio','RECORD_AUDIO','CAMERA'];
+const LIB=['app.js','camera.js','content.js','draw.js','game.js','postcards.js','qban-data.js','scenes.js','sprite-data.js','sprites.js','title.js'];
 // 新页面只允许调用真机已画出的 Canvas 方法。
 const UNVERIFIED=/ctx\.(?:scale|rect|ellipse|translate|transform|setTransform|getImageData|createPattern)\s*\(|globalCompositeOperation\s*=\s*['"]lighter/;
 async function check(){

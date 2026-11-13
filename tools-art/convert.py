@@ -10,7 +10,9 @@
 # 全部参数集中在 PARAMS，戴上眼镜后觉得太亮或太暗，只改这里重新转换即可。
 #
 # 用法：
-#   PYTHONPATH=build/pylibs python tools-art/convert.py              重新生成 lib/sprite-data.js（现有三视图）
+#   PYTHONPATH=build/pylibs python tools-art/convert.py              重新生成 lib/sprite-data.js（只含首页成年全息线稿）
+#   PYTHONPATH=build/pylibs python tools-art/convert.py --colour     旧的正常色三视图 v2 转换，仅输出 build/art/ 作对照
+#   游戏内 Q 版精灵由 tools-art/qban.py 从用户确认的黑底绿色原画生成（lib/qban-data.js）
 #   PYTHONPATH=build/pylibs python tools-art/convert.py --legacy     用旧算法生成，仅输出 build/art/legacy/ 作对照
 #   PYTHONPATH=build/pylibs python tools-art/convert.py --sheet 路径 --kind body|bust --names a,b,c [--grid 4x2]
 #       转换新批次网格图，输出 build/art/qban/<名字>.png 与 build/art/qban/<批次>.json（基线偏移），不改动游戏数据
@@ -207,10 +209,14 @@ def main():
     return
   os.makedirs('build/art', exist_ok=True)
   res = {}
-  for name, (h, fade) in SPEC.items():
-    res[name] = render(sheet.crop(CROPS[name]), height=h, fade=fade)[0]
+  if '--colour' in args:
+    # 旧的正常色三视图转换，仅作对照输出，不再写入游戏数据（游戏里的 Q 版改由 tools-art/qban.py 生成）
+    for name, (h, fade) in SPEC.items():
+      g = render(sheet.crop(CROPS[name]), height=h, fade=fade)[0]
+      Image.fromarray(g).save(f'build/art/{name}.png'); green_preview(g, f'build/art/{name}-preview.png')
+    return
   res['holo'] = holo(276)
-  lines = ['// 由 tools-art/convert.py 生成：用户提供的Q版三视图（正常色，v2 转换：剪影轮廓＋勾线＋分类淡填色）与已确认的全息线稿，单通道亮度（0–255），运行时展开为绿色RGBA。', 'export const SPRITES={']
+  lines = ['// 由 tools-art/convert.py 生成：首页已确认的成年全息线稿，单通道亮度（0–255），运行时展开为绿色RGBA。Q 版精灵见 qban-data.js。', 'export const SPRITES={']
   total = 0
   for name, g in res.items():
     hgt, wid = g.shape; total += g.size

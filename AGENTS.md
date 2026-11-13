@@ -1,6 +1,6 @@
 # 旅行肥鱼（原大肥鱼显示测试）
 
-2026-11-12 最新范围（优先于下方全部历史记录）：用户要求把本项目重构为 AIUI 桌宠游戏“旅行肥鱼”，属于放置旅行类型，内容原创，不复刻既有游戏。正式页面为 `pages/home/index`，独立 ID 为 `develop.rokid.agent.lvfeiyu-20261112`，权限为 network、microphone、audio、RECORD_AUDIO。设计、经济数值和真机证据见 `docs/LVFEIYU.md`。
+2026-11-12 最新范围（优先于下方全部历史记录）：用户要求把本项目重构为 AIUI 桌宠游戏“旅行肥鱼”，属于放置旅行类型，内容原创，不复刻既有游戏。正式页面为 `pages/home/index`，独立 ID 为 `develop.rokid.agent.lvfeiyu-20261112`，权限为 network、microphone、audio、RECORD_AUDIO、CAMERA。设计、经济数值和真机证据见 `docs/LVFEIYU.md`。
 
 ## 已确认的 Q 版素材画风（2026-11-12，用户最新选择）
 
@@ -10,14 +10,15 @@
 - 角色特征继续锁定：呆毛、鲸鳍耳、她左侧的蝴蝶结、围裙鲸鱼图案、鲸尾。参考图用来继承画风；角度、配饰左右、2048×1024 网格、统一比例和脚底基线仍按清单逐项验收。
 - 原样保存确认图；技术适配时保留其亮外轮廓、暗内部线与填充的关系。画风确认已完成，尺寸/精确色值/基线和真机光学观感分别验收。载入页成年全息像仍沿用自身已有约定。
 
-- 本轮 80 格源原画已绘齐，选用版本与 G1 第一格替换以 `../output/references/dafeiyu-20261112/qban-v2/manifest.json` 为准，预览入口为同目录 `素材预览.html`；绘制与检查结果见美术交接第 7 节。源图尚待尺寸、精确绿色、统一比例和基线适配，未接入游戏或真机验收。
+- 本轮 80 格源原画已绘齐，选用版本与 G1 第一格替换以 `../output/references/dafeiyu-20261112/qban-v2/manifest.json` 为准，预览入口为同目录 `素材预览.html`；绘制与检查结果见美术交接第 7 节。0.5.0 已由 `tools-art/qban.py` 原样取亮度接入游戏（`lib/qban-data.js`，不改色），另含 `extensions/photo-discover-8f/` 的 8 帧“看看”发现动画。
 
 ## 当前游戏约定
 
 - 游戏内文字全部使用中文。
-- 互动中的角色样貌必须来自用户的 Q 版三视图（正、侧、背、四个表情胸像）。载入页的成年托腮全息像只用于载入动画。
-- 精灵由 `tools-art/convert.py` 生成到 `lib/sprite-data.js`，不要手改。
-- 共享代码 `lib/app.js`、`game.js`、`content.js`、`scenes.js`、`title.js`、`draw.js`、`postcards.js`、`sprites.js` 不依赖 DOM 或 localStorage，宿主能力（存储、聆听、模型、朗读）通过 `createApp(host)` 注入。新增 lib 文件要同时加进 `scripts/aix.mjs` 的 LIB 列表。
+- 互动中的角色样貌必须来自用户确认的绿色 Q 版原画（qban-v2）。载入页的成年托腮全息像只用于载入动画。
+- 精灵由 `tools-art/qban.py`（Q 版，`lib/qban-data.js`）和 `tools-art/convert.py`（全息像，`lib/sprite-data.js`）生成，不要手改。新增帧要加进 `lib/sprites.js` 的 `REQUIRED` 或 `LATER`。
+- “看看”识图：相机实现移植自一眼顶真（`lib/camera.js`），只用无参数 `takePhoto()`，在按键回调里同步发起；视觉模型每次新建会话、用完销毁。
+- 共享代码 `lib/app.js`、`game.js`、`content.js`、`scenes.js`、`title.js`、`draw.js`、`postcards.js`、`sprites.js`、`camera.js` 不依赖 DOM 或 localStorage，宿主能力（存储、聆听、模型、朗读）通过 `createApp(host)` 注入。新增 lib 文件要同时加进 `scripts/aix.mjs` 的 LIB 列表。
 - 0.4.0 新增游戏首页与互动教程，TTS 用 `host.speech`。开始聆听前必须停播；主页自言自语不出声；不做常驻聆听（用户已明确不要）。系统唤醒词无法修改。
 - 只使用真机已画出的 Canvas 方法；`npm run check` 会扫描禁用调用，并运行 `tests/lvfeiyu.test.mjs`。
 - 本目录是 Git 仓库，远端为 GitHub `tiranasi/FeiyuTravel`。修改后运行 `npm run check`，然后提交并推送。`npm run install -- --params '{"debug":"fast"}'` 安装并以 120 倍时间启动；加 `"reset":"1"` 清档。

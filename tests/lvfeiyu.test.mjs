@@ -3,8 +3,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Game from '../lib/game.js';
 import { createApp, parseReply } from '../lib/app.js';
-import { createDecoder, SPRITE_ORDER } from '../lib/sprites.js';
+import { createDecoder, SPRITE_ORDER, REQUIRED, ALIAS } from '../lib/sprites.js';
 import { SPRITES } from '../lib/sprite-data.js';
+import { QBAN } from '../lib/qban-data.js';
+import { capturePhoto, bytesToBase64 } from '../lib/camera.js';
+import { discoverFrame } from '../lib/scenes.js';
 import { DESTS, ITEMS, speechText } from '../lib/content.js';
 
 const MIN = 60000;
@@ -147,11 +150,18 @@ test('模型回复解析心情标签', () => {
   assert.deepEqual(parseReply('[生气]哼，不理你了'), { mood: 'pout', text: '哼，不理你了' });
   assert.deepEqual(parseReply('【惊讶】真的吗'), { mood: 'wow', text: '真的吗' });
   assert.equal(parseReply('没有标签').mood, 'smug');
+  assert.equal(parseReply('[开心]好耶').mood, 'happy');
+  assert.equal(parseReply('[疑惑]这是啥').mood, 'confused');
   assert.ok(parseReply('长'.repeat(100)).text.length <= 60);
 });
 
 test('精灵数据尺寸与镜像解码', () => {
-  for (const name of Object.keys(SPRITES)) assert.equal(Buffer.from(SPRITES[name].d, 'base64').length, SPRITES[name].w * SPRITES[name].h, name);
+  const all = { ...SPRITES, ...QBAN };
+  for (const name of Object.keys(all)) assert.equal(Buffer.from(all[name].d, 'base64').length, all[name].w * all[name].h, name);
+  // 用户确认的 80 格 Q 版原画 + 识图指认 8 帧，全部进入解码顺序
+  assert.equal(Object.keys(QBAN).length, 88);
+  for (const name of Object.keys(QBAN)) assert.ok(SPRITE_ORDER.includes(name), `未使用的帧：${name}`);
+  assert.equal(new Set(SPRITE_ORDER).size, SPRITE_ORDER.length, '解码顺序无重复');
   const canvases = [];
   class FakeCanvas {
     constructor(w, h) { this.w = w; this.h = h; canvases.push(this); }
@@ -159,12 +169,16 @@ test('精灵数据尺寸与镜像解码', () => {
   }
   const decoder = createDecoder(FakeCanvas, value => Buffer.from(value, 'base64').toString('latin1'));
   let steps = 0;
+  while (!decoder.ready) { decoder.step(); steps += 1; }
+  for (const name of REQUIRED) assert.ok(decoder.cache[name], name);
+  assert.ok(decoder.cache.front && decoder.cache.smug, '旧短名指向新原画');
+  assert.equal(decoder.finished, false, '其余动作帧留到游戏中后台解码');
   while (!decoder.step()) steps += 1;
-  assert.equal(Object.keys(decoder.cache).length, SPRITE_ORDER.length);
+  assert.equal(Object.keys(decoder.cache).length, SPRITE_ORDER.length + Object.keys(ALIAS).length + 1);
   assert.ok(steps > 8, '分块解码');
   const side = decoder.cache.side.canvas.data;
   const mirror = decoder.cache.sideL.canvas.data;
-  const w = SPRITES.side.w;
+  const w = QBAN.body_side.w;
   const y = 60;
   for (let x = 0; x < w; x += 7) assert.equal(side[(y * w + x) * 4 + 3], mirror[(y * w + (w - 1 - x)) * 4 + 3]);
 });
@@ -196,7 +210,7 @@ function fakeCtx(stats) {
 
 
 // 测试宿主：假时钟、假计时器、可观察的聆听与朗读。
-function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！' } = {}) {
+function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', vision = null } = {}) {
   let clock = T0;
   const timers = [];
   class FakeCanvas { constructor(w, h) { this.w = w; this.h = h; } getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {}, flush() {} }; } }
@@ -216,6 +230,7 @@ function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！' } = {}
       return { stop() { handlers.onEnd('你好呀'); }, abort() { h.listenHandlers = null; } };
     },
     chat: { create: async () => ({}), prompt: async () => voiceReply, destroy() {} },
+    vision,
     speech: { speak(text) { h.spoken.push(text); h.speaking = true; }, stop() { h.speaking = false; } }
   });
   const stats = {};
@@ -338,8 +353,10 @@ test('全流程冒烟：首页 → 载入 → 主页 → 召唤 → 菜单 → �
   run(400);
   assert.equal(app.view.close.bubble.text, '你来啦！');
   assert.equal(app.view.close.mood, 'wow');
-  app.swipe(1); app.confirm(); run(1000);
-  app.swipe(1); app.confirm(); run(1000);
+  for (const id of ['pat', 'poke']) {
+    app.view.dockFocus = app.view.dock.findIndex(d => d.id === id);
+    app.confirm(); run(1000);
+  }
   assert.ok(app.back());
   run(1500);
   assert.equal(app.view.screen, 'home');
@@ -381,6 +398,135 @@ test('全流程冒烟：首页 → 载入 → 主页 → 召唤 → 菜单 → �
   assert.ok(h.store.get(Game.SAVE_KEY));
   for (const name of ['title', 'boot', 'home', 'close', 'menu', 'gift', 'postcard']) assert.ok(screens.has(name), name);
   assert.ok(stats.drawImage > 100 && stats.clip > 0);
+});
+
+// 假相机与假模型：记录调用顺序，验证拍照在按键调用栈内同步开始。
+function fakeVision({ reply = '[惊讶]这是一个杯子！装满奶茶就好了', fail = null } = {}) {
+  const log = { shots: 0, prompts: [], destroyed: 0, aborted: 0 };
+  let release = null;
+  const vision = {
+    shoot(options) {
+      log.shots += 1;
+      options.onStage('stream');
+      options.onStage('warmup');
+      return new Promise((resolve, reject) => {
+        release = () => {
+          if (!options.isCurrent()) { log.aborted += 1; const e = new Error('canceled'); e.name = 'AbortError'; reject(e); return; }
+          options.onStage('shutter');
+          if (fail) reject(fail); else resolve('data:image/jpeg;base64,/9j/AAAA');
+        };
+      });
+    },
+    create: async system => ({ system }),
+    prompt: async (session, question, url, ms) => { log.prompts.push({ system: session.system, question, url, ms }); return reply; },
+    destroy() { log.destroyed += 1; }
+  };
+  return { vision, log, shutter: () => release && release() };
+}
+const flush = () => new Promise(resolve => setImmediate(resolve));
+
+async function toClose(h) {
+  h.run(800);
+  h.app.view.title.focus = 0;
+  h.app.confirm();
+  h.run(7400);
+  assert.equal(h.app.view.screen, 'home');
+  h.run(1200);
+  h.app.confirm();
+  h.run(1500);
+  assert.equal(h.app.view.screen, 'close');
+  h.app.view.dockFocus = h.app.view.dock.findIndex(d => d.id === 'look');
+  assert.ok(h.app.view.dockFocus > 0, '近景有「看看」');
+}
+
+test('看看：按键内同步开始拍照，带图提问后播放指认动画并朗读', async () => {
+  const f = fakeVision();
+  const h = harness({ vision: f.vision });
+  await toClose(h);
+  h.app.confirm();
+  assert.equal(f.log.shots, 1, '拍照必须在 confirm() 调用栈内开始');
+  assert.equal(h.app.view.close.phase, 'looking');
+  assert.equal(h.speaking, false, '取景时不朗读');
+  h.run(1000);
+  h.app.swipe(1);
+  assert.equal(h.app.view.dock[h.app.view.dockFocus].id, 'look', '取景时不切换选项');
+  f.shutter();
+  await flush(); await flush(); await flush();
+  h.run(200);
+  assert.equal(f.log.prompts.length, 1);
+  const p = f.log.prompts[0];
+  assert.ok(p.url.startsWith('data:image/jpeg;base64,'));
+  assert.equal(p.ms, 30000);
+  assert.ok(p.system.includes('摄像头') && p.system.includes('大肥鱼'));
+  assert.equal(f.log.destroyed, 1, '用完即销毁会话');
+  assert.equal(h.app.view.close.phase, 'discover');
+  assert.equal(h.app.view.close.mood, 'wow');
+  assert.ok(h.spoken.at(-1).includes('杯子'));
+  assert.deepEqual([0, 200, 300, 400, 600, 2300, 2600].map(discoverFrame), ['pd1', 'pd2', 'pd3', 'pd4', 'pd5', 'pd6', 'pd5']);
+  const holdFrames = new Set();
+  for (let ms = 770; ms < 770 + 4790; ms += 10) holdFrames.add(discoverFrame(ms));
+  assert.deepEqual([...holdFrames].sort(), ['pd5', 'pd6', 'pd7', 'pd8']);
+  h.run(3000, 80);
+  assert.equal(h.app.view.close.phase, 'discover');
+  h.run(20000, 200);
+  assert.equal(h.app.view.close.phase, 'idle', '指认结束回到半身');
+});
+
+test('看看：返回键取消拍照，相机失败给出提示，不调用模型', async () => {
+  const f = fakeVision();
+  const h = harness({ vision: f.vision });
+  await toClose(h);
+  h.app.confirm();
+  h.run(400);
+  assert.ok(h.app.back());
+  assert.equal(h.app.view.close.phase, 'idle');
+  assert.equal(h.app.view.screen, 'close', '取消拍照不离开近景');
+  f.shutter();
+  await flush(); await flush();
+  assert.equal(f.log.aborted, 1);
+  assert.equal(f.log.prompts.length, 0);
+
+  const denied = new Error('Permission denied'); denied.name = 'NotAllowedError';
+  const g = fakeVision({ fail: denied });
+  const h2 = harness({ vision: g.vision });
+  await toClose(h2);
+  h2.app.confirm();
+  g.shutter();
+  await flush(); await flush();
+  h2.run(200);
+  assert.equal(h2.app.view.close.phase, 'idle');
+  assert.ok(h2.app.view.close.bubble.text.includes('权限'));
+  assert.equal(g.log.prompts.length, 0);
+
+  const h3 = harness();
+  await toClose(h3);
+  h3.app.confirm();
+  assert.equal(h3.app.view.close.phase, 'idle', '宿主没有相机时不进入取景');
+});
+
+test('相机模块：getUserMedia → ImageCapture → 预热 → 无参 takePhoto，并停止视频轨', async () => {
+  let clock = 0;
+  const calls = [];
+  const track = { stop() { calls.push('stop'); } };
+  const root = {
+    navigator: { mediaDevices: { getUserMedia: async c => { calls.push(['gum', c]); return { getVideoTracks: () => [track], getTracks: () => [track] }; } } },
+    ImageCapture: class { constructor(t) { calls.push('ic'); } takePhoto(...args) { calls.push(['take', args.length, clock]); return Promise.resolve({ type: 'image/jpeg', arrayBuffer: async () => new Uint8Array([255, 216, 255]).buffer }); } },
+    setTimeout: (fn, ms) => { clock += ms; fn(); },
+    now: () => clock
+  };
+  const stages = [];
+  const photo = await capturePhoto(null, { onStage: s => stages.push(s) }, null, root);
+  assert.deepEqual(calls[0], ['gum', { video: true }]);
+  const take = calls.find(c => Array.isArray(c) && c[0] === 'take');
+  assert.equal(take[1], 0, 'takePhoto 只用无参形式');
+  assert.ok(take[2] >= 2500, '预热 2.5 秒后再拍');
+  assert.ok(calls.includes('stop'));
+  assert.deepEqual(stages, ['stream', 'warmup', 'shutter']);
+  assert.equal(photo.source, 'ImageCapture');
+  assert.equal(bytesToBase64(new Uint8Array([255, 216, 255])), '/9j/');
+  let current = true;
+  const p2 = capturePhoto(null, { isCurrent: () => current, onStage: s => { if (s === 'warmup') current = false; } }, null, root);
+  await assert.rejects(p2, e => e.name === 'AbortError');
 });
 
 test('教程所有步骤可绘制', () => {

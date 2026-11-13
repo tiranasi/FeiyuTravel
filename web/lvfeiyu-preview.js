@@ -32,6 +32,21 @@ const app = createApp({
     return { stop() { finish(); }, abort() { asrHandlers = null; asrForm.hidden = true; } };
   },
   chat: null,
+  // 本机预览：模拟“看看”。不打开电脑摄像头，2.8 秒后给出固定回答，只用来检查动画与布局
+  vision: {
+    shoot(options) {
+      options.onStage('stream');
+      setTimeout(() => options.onStage('warmup'), 200);
+      return new Promise((resolve, reject) => setTimeout(() => {
+        if (!options.isCurrent()) { const e = new Error('canceled'); e.name = 'AbortError'; reject(e); return; }
+        options.onStage('shutter');
+        resolve('data:image/jpeg;base64,');
+      }, 2800));
+    },
+    create: async () => ({}),
+    prompt: () => new Promise(resolve => setTimeout(() => resolve('[惊讶]是一个马克杯！要是装满热可可就完美啦'), 1500)),
+    destroy() {}
+  },
   // 本机预览：用浏览器语音朗读，仅供试听节奏，不代表眼镜音色
   speech: {
     speak(value) {
