@@ -239,6 +239,21 @@ AIX 约 1.3MB，安装结果 `updated`，由我用 adb 按键操作。测试途�
 - **日志确认已执行**：`settings open` → `setting fast true` → `setting fast false`（测完已恢复为关）→ 双击 `key Backspace title` 后仍停在首页，没有退出应用。
 - **尚未验证**：在真机上开启快速旅行后实际出发一次的时长；佩戴者看弹窗的观感。
 
+## 手机 App 的 AR 截图与旅行肥鱼（RG_glasses 1906092618121455，2026-11-13）
+
+佩戴者反馈：玩旅行肥鱼时用手机 App 做 AR 截图，容易卡死、退出并显示“连接已断开”。抓日志复现（日志在 `build/device/`，未提交）：
+
+| 条件 | 结果 |
+| --- | --- |
+| 首页开着旅行肥鱼，截 3 次 | 前两次 `Photo capture failed`，截好的屏幕图被删除，`sendArPictureDataToMobile success -> false`；第三次画面卡住，lmkd 两次杀 `sprite.record`，再杀 TTS 和系统桌面 `sprite.launcher`，游戏页面随之 unload；新桌面读到 `bluetoothStatus:false`，于是显示“连接已断开” |
+| 退出游戏、在系统桌面截 3 次 | 3 次都成功（每次约 7.5 秒），无 lmkd 查杀 |
+
+- AR 截图的拍照（4032×3024）、合成和 AIUI 页面运行在同一个进程 `com.rokid.os.sprite.assistserver` 里。截图时该进程一度达到约 950 MB（整机约 1.8 GB）。
+- 不开游戏时该进程原生堆约 9 MB；开着游戏首页时约 47 MB，PSS 约 150–210 MB。多出来的主要是常驻的精灵解码缓存和数据脚本里的 base64 字符串。
+- 期间 CompanionDevice 没有蓝牙断开记录，所以“连接已断开”是桌面被杀后重启显示的状态，不是链路掉线。
+- 更早一次（18:03:45）assistserver 在 `ink-canvas-pain` 线程里于 Adreno 驱动内存拷贝处 SIGSEGV，导致手机真的断开；那次是否与截图同时发生没有证据。
+- 页面在截图的预览、拍照阶段没有收到 hide/show，目前没有已验证的“截图开始”事件可用。
+
 ## 0.6.0 真机验证（RG_glasses 1906092618121455，2026-11-13）
 
 安装结果 `updated`。在真机上放好饭团让她出发去“雨巷书屋”，再从主页发起通话。通话由我用 adb 按键操作，佩戴者尚未亲自试用。
