@@ -162,7 +162,7 @@ test('精灵数据尺寸与镜像解码', () => {
   const all = { ...SPRITES, ...QBAN };
   for (const name of Object.keys(all)) assert.equal(Buffer.from(all[name].d, 'base64').length, all[name].w * all[name].h, name);
   // 用户确认的 80 格 Q 版原画 + 识图指认 8 帧 + 0.8.0 批次 J/K 16 格、叉腰生气、信标流量图标，全部进入解码顺序
-  assert.equal(Object.keys(QBAN).length, 106);
+  assert.equal(Object.keys(QBAN).length, 100);   // 0.8.6 停用 6 个 pc_* 明信片动作帧
   for (const name of Object.keys(QBAN)) assert.ok(SPRITE_ORDER.includes(name), `未使用的帧：${name}`);
   assert.equal(new Set(SPRITE_ORDER).size, SPRITE_ORDER.length, '解码顺序无重复');
   // 带像素存储的假 Canvas：putImageData(image, x, y) 写进对应位置
@@ -817,10 +817,44 @@ test('纪念品图标与明信片插画：图标进后台解码，明信片按�
   for (const name of CARD_NAMES.slice(-3)) assert.ok(dec.cache[name], `最近想要的 ${name} 已解码`);
   // 逐张翻：每张都能解出来
   for (const name of CARD_NAMES) { dec.want(name); while (!dec.step()); assert.ok(dec.cache[name], name); }
-  for (const dest of DESTS) dest.lines.forEach((line, i) => {
-    for (const t of [T0, T0 + 500, T0 + 1300, T0 + 4000]) drawPostcardScene(ctx, { dest: dest.id, line, at: T0 }, 36, 36, 408, 184, t, dec.cache);
+  // 每张：解好后连续绘制，从黑底显影到全亮，动效只用白名单方法
+  const alphas = [];
+  const probe = new Proxy(ctx, { set(obj, key, value) { if (key === 'globalAlpha') alphas.push(value); obj[key] = value; return true; } });
+  let t = T0;
+  for (const dest of DESTS) dest.lines.forEach(line => {
+    const card = { dest: dest.id, line, at: T0 };
+    dec.want(cardArtId(card)); while (!dec.step());
+    alphas.length = 0;
+    for (let i = 0; i < 30; i += 1) { t += 40; drawPostcardScene(probe, card, 36, 36, 408, 184, t, dec.cache); }
+    const fade = alphas.filter(a => a < 1);
+    assert.ok(fade.length && fade[0] < 0.2, `${line} 从暗处显影`);
+    t += 1000;   // 离开一会儿，再看要重新显影
   });
-  assert.ok(stats.drawImage >= 18);
+  assert.ok(stats.drawImage >= 18 * 30);
+  // 插画还没解好：只画冲印扫描线和小字，不画任何精灵（旧的程序线稿已移除）
+  const bare = {};
+  const ctx2 = fakeCtx(bare);
+  drawPostcardScene(ctx2, { dest: 'moon', line: DESTS[5].lines[0], at: T0 }, 36, 36, 408, 184, T0, {});
+  assert.ok(!bare.drawImage, '未解码时不画旧线稿或精灵');
+  assert.ok(bare.fillText >= 1);
+});
+
+test('明信片列表：进入和移动焦点就预先解码当前与前后各一张', () => {
+  const h = harness();
+  h.run(800);
+  const v = h.app.view;
+  v.g.postcards = DESTS.slice(0, 5).map((dest, i) => ({ dest: dest.id, at: T0 + i, line: dest.lines[0], pose: 'side', read: true }));
+  v.screen = 'home';
+  v.pet.tp = null;
+  v.dockFocus = v.dock.findIndex(d => d.id === 'album');
+  h.app.confirm();
+  assert.equal(v.screen, 'menu');
+  h.run(400);
+  const cards = v.g.postcards.slice().reverse();
+  for (const i of [0, 1, cards.length - 1]) assert.ok(v.cache[cardArtId(cards[i])], `第 ${i} 张已预解码`);
+  h.app.swipe(1); h.app.swipe(1);
+  h.run(400);
+  assert.ok(v.cache[cardArtId(cards[3])], '移动焦点后预解码下一张');
 });
 
 // ---------------------------------------------------------------- 晃一晃（0.8.0）

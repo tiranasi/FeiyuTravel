@@ -83,6 +83,10 @@ def preview(g, path, zoom=2):
   im = Image.fromarray(rgb)
   im.resize((im.width * zoom, im.height * zoom), Image.NEAREST).save(path)
 
+# 停用的帧：manifest 里仍登记，但游戏不再使用，不写进 qban-data.js
+#   pc_*：旧的程序明信片线稿上的动作帧，0.8.6 起明信片只画插画
+RETIRED = {'pc_market', 'pc_alley', 'pc_dome', 'pc_abyss', 'pc_harbor', 'pc_moon'}
+
 def main():
   man = json.load(open(ROOT + '/manifest.json', encoding='utf8'))
   over = {o['id']: o for o in man.get('overrides', [])}
@@ -92,6 +96,7 @@ def main():
     get = cells(ROOT + '/' + b['file'])
     for f in b['frames']:
       fid = f['id']
+      if fid in RETIRED: continue
       if fid in over:
         # 单帧替换图：原生分辨率不同，按其站姿高度换算到同一身高
         L = lum(Image.open(ROOT + '/' + over[fid]['file']))
