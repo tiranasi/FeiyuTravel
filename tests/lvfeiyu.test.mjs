@@ -9,7 +9,7 @@ import { SPRITES } from '../lib/sprite-data.js';
 import { QBAN } from '../lib/qban-data.js';
 import { capturePhoto, bytesToBase64 } from '../lib/camera.js';
 import { discoverFrame } from '../lib/scenes.js';
-import { DESTS, ITEMS, speechText, cardArtId, IDLE_MUTTER } from '../lib/content.js';
+import { DESTS, ITEMS, speechText, cardArtId, IDLE_MUTTER, AFFINITY, LINES, systemPrompt, touchLines, affinityMutter, affinityLevel } from '../lib/content.js';
 import { createShakeDetector, qAxis, qMul } from '../lib/motion.js';
 import { CORNERS } from '../lib/scenes.js';
 
@@ -949,4 +949,70 @@ test('首页新待机：每个动作和每种甩法都能在 6 个停靠点绘�
   const seen = new Set();
   for (let i = 0; i < 400; i += 1) { v.pet.actUntil = v.now; v.pet.actsHere = 0; v.pet.tp = null; v.pet.corner = 0; step(40); seen.add(v.pet.act); }
   for (const act of ['idle', 'gaze', 'play', 'doze', 'hum', 'stroll', ...acts.slice(0, 11)]) assert.ok(seen.has(act), act);
+});
+
+test('亲密度：口吻、摸头戳戳台词、碎碎念随等级增加', () => {
+  assert.deepEqual([0, 11, 12, 35, 36, 79, 80, 9999].map(affinityLevel), [0, 0, 1, 1, 2, 2, 3, 3]);
+  assert.ok(systemPrompt('状态', 0).includes('初识') && systemPrompt('状态', 0).includes('怕生'));
+  assert.ok(systemPrompt('状态', 90).includes('挚友'));
+  for (const kind of ['pat', 'poke']) {
+    const counts = [0, 12, 36, 80].map(value => touchLines(kind, value).length);
+    assert.equal(counts[0], LINES[kind].length, '初识只有基础台词');
+    for (let i = 1; i < counts.length; i += 1) assert.ok(counts[i] > counts[i - 1], `${kind} 每升一级都多几句`);
+    assert.ok(touchLines(kind, 80).every(line => line.length <= 16), '台词放得进气泡');
+  }
+  assert.equal(affinityMutter(0).length, 0);
+  assert.ok(affinityMutter(80).length > affinityMutter(12).length);
+});
+
+test('亲密度存档：旧档没有 bond 时从 0 开始，信物计入图鉴', () => {
+  const old = Game.normalize({ v: 1, affinity: 50, souvenirs: { ribbon: 4, lantern: 1 } }, T0);
+  assert.equal(old.bond, 0);
+  assert.equal(Game.bondDue(old), 1, '已经到亲近：从熟悉开始补办');
+  assert.equal(old.souvenirs.ribbon, 4, '读档不改数量');
+  assert.equal(Game.normalize({ v: 1, bond: 99 }, T0).bond, AFFINITY.length - 1);
+  assert.equal(Game.totalGifts(), 21);
+  const s = Game.newState(T0);
+  assert.equal(Game.bondDue(s), 0, '新档不办仪式');
+  s.affinity = 12;
+  const got = Game.claimBond(s);
+  assert.equal(got.level, 1);
+  assert.equal(s.souvenirs.ribbon, 1);
+  assert.equal(Game.claimBond(s), null, '同一级只送一次');
+  assert.equal(Game.collected(s), 1);
+});
+
+test('亲密度升级仪式：回到主页时依次补办，收下后进图鉴，不动鳞光', async () => {
+  const h = homeHarness();
+  const v = h.app.view;
+  const scales = v.g.scales;
+  v.g.affinity = 40;
+  h.run(400);
+  assert.equal(v.screen, 'gift');
+  assert.equal(v.giftView.bond, 1);
+  assert.equal(h.spoken.at(-1), AFFINITY[1].up);
+  h.run(1000);
+  h.app.confirm();
+  assert.equal(v.screen, 'home');
+  assert.equal(v.g.bond, 1);
+  assert.equal(v.g.souvenirs.ribbon, 1);
+  h.run(400);
+  assert.equal(v.screen, 'gift', '还差一级，接着办');
+  assert.equal(v.giftView.bond, 2);
+  h.run(1000);
+  h.app.confirm();
+  h.run(2000);
+  assert.equal(v.screen, 'home', '办完不再弹出');
+  assert.equal(v.g.souvenirs.badge, 1);
+  assert.equal(v.g.scales, scales, '仪式不给也不扣鳞光');
+  // 图鉴第七行可绘制、可打开详情
+  v.screen = 'menu';
+  v.menu = { kind: 'dex', focus: 18, detail: null };
+  h.run(80);
+  h.app.confirm();
+  h.run(300);
+  assert.ok(v.menu.detail);
+  v.menu.focus = 20;
+  h.run(80);
+  assert.ok(h.screens.has('gift') && h.screens.has('menu'));
 });
