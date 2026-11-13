@@ -197,6 +197,8 @@ function fakeCtx(stats) {
         stats[key] = (stats[key] || 0) + 1;
         if (key === 'measureText') return { width: String(args[0]).length * 12 };
         if (key === 'drawImage' && !args[0]) throw new Error('drawImage 缺少来源');
+        // 真机上 drawImage 会乘上当前 fillStyle 的透明度：画精灵前 fillStyle 必须不透明（经 draw.js blit）
+        if (key === 'drawImage' && /rgba\([^)]*,\s*(0?\.\d+|0)\)\s*$/.test(String(obj.fillStyle))) throw new Error(`drawImage 时 fillStyle 半透明：${obj.fillStyle}`);
         for (const value of args) if (typeof value === 'number' && !Number.isFinite(value)) throw new Error(`${key} 收到非数值参数`);
         return undefined;
       };
@@ -306,6 +308,13 @@ test('快速旅行：开启后新旅行时长为 1/3，存档保留开关', () =
   assert.ok(Math.abs((quick.trip.returnAt - T0) * 3 - (slow.trip.returnAt - T0)) < 2);
   assert.equal(Game.normalize(JSON.parse(JSON.stringify(quick)), T0).settings.fast, true);
   assert.equal(Game.normalize({}, T0).settings.fast, false);
+  // 0.7.1 之前的存档：设置一次性回到默认（语音开、快速旅行关）；之后的切换照常保存
+  const old = JSON.parse(JSON.stringify(quick));
+  old.settings = { voice: false, fast: true };
+  const moved = Game.normalize(old, T0);
+  assert.deepEqual([moved.settings.voice, moved.settings.fast], [true, false]);
+  moved.settings.voice = false;
+  assert.equal(Game.normalize(JSON.parse(JSON.stringify(moved)), T0).settings.voice, false);
 });
 
 test('教程：每步需要真实操作，完成后记录并进入载入动画', () => {

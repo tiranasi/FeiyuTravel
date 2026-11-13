@@ -153,14 +153,18 @@ def legacy(crop, height, fade=0, pad=4):
     n = int(height * fade); g[height - n:] *= (np.linspace(1, 0, n) ** 1.5)[:, None]
   return np.pad(g.astype(np.uint8), pad)
 
+# 载入页成年全息像：loading-adult-v4 托腮版（黑底，亮绿外轮廓 + 暗绿填色）。
+# 同 qban.py 只取亮度 max(R,G,B)，低于 18 视为黑（透明），不重绘。旧的 line-tail-simple-v3 线稿已不再使用。
+HOLO_SRC = '../output/references/dafeiyu-20261112/loading-adult-v4/lvfy-loading-chin-rest-v4.png'
 def holo(height):
-  im = Image.open('web/assets/art/hologram/line-tail-simple-v3.png').convert('RGBA')
-  im = im.crop(im.getbbox())
-  w = round(im.width * height / im.height)
-  im = im.resize((w, height), Image.LANCZOS)
-  a = np.asarray(im).astype(np.float32)
-  g = a[..., 3] * (a[..., :3].max(axis=2) / 255)
-  return np.pad(np.clip(g, 0, 255).astype(np.uint8), 2)
+  L = np.asarray(Image.open(HOLO_SRC).convert('RGB')).max(axis=2).astype(np.float32)
+  L[L < 18] = 0
+  ys = np.where(L.max(axis=1) > 0)[0]; xs = np.where(L.max(axis=0) > 0)[0]
+  L = L[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+  w = round(L.shape[1] * height / L.shape[0])
+  g = np.asarray(Image.fromarray(L, 'F').resize((w, height), Image.LANCZOS))
+  g = np.clip(g, 0, 255); g[g < 6] = 0
+  return np.pad(g.astype(np.uint8), 2)
 
 def green_preview(g, path, zoom=3):
   g = g.astype(np.uint16)
@@ -216,7 +220,7 @@ def main():
       Image.fromarray(g).save(f'build/art/{name}.png'); green_preview(g, f'build/art/{name}-preview.png')
     return
   res['holo'] = holo(276)
-  lines = ['// 由 tools-art/convert.py 生成：首页已确认的成年全息线稿，单通道亮度（0–255），运行时展开为绿色RGBA。Q 版精灵见 qban-data.js。', 'export const SPRITES={']
+  lines = ['// 由 tools-art/convert.py 生成：载入页成年全息像（loading-adult-v4 托腮版），单通道亮度（0–255），运行时展开为绿色RGBA。Q 版精灵见 qban-data.js。', 'export const SPRITES={']
   total = 0
   for name, g in res.items():
     hgt, wid = g.shape; total += g.size
