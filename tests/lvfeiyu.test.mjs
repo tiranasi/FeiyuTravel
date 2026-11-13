@@ -523,8 +523,10 @@ test('看看：按键内同步开始拍照，带图提问后播放指认动画�
   assert.deepEqual([...holdFrames].sort(), ['pd5', 'pd6', 'pd7', 'pd8']);
   h.run(3000, 80);
   assert.equal(h.app.view.close.phase, 'discover');
-  h.run(20000, 200);
-  assert.equal(h.app.view.close.phase, 'idle', '指认结束回到半身');
+  h.run(60000, 200);
+  assert.equal(h.app.view.close.phase, 'discover', '指认姿势一直保持，不自动回到半身');
+  h.app.back();
+  assert.equal(h.app.view.close.phase, 'idle', '双击先结束指认');
 });
 
 test('看看：返回键取消拍照，相机失败给出提示，不调用模型', async () => {
