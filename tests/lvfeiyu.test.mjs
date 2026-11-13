@@ -764,7 +764,7 @@ function flickQ(dir, ms, amp = 15, go = 110, back = 170) {
   return qMul(qAxis([1, 0, 0], pitch), qMul(qAxis([0, 0, 1], yaw), BASE_Q));
 }
 
-test('甩头识别：四个方向的轻甩触发，慢转头、转头停住、大幅转头、走路颠簸不触发', () => {
+test('甩头识别：甩够就触发、不要求回正，回正不算反向；慢转头、走路颠簸不触发', () => {
   const run = (fn, ms = 1500) => {
     const d = createShakeDetector();
     const out = [];
@@ -774,8 +774,10 @@ test('甩头识别：四个方向的轻甩触发，慢转头、转头停住、�
   for (const dir of ['left', 'right', 'up', 'down']) assert.deepEqual(run(t => flickQ(dir, t - 200)), [dir], dir);
   const yawQ = deg => qMul(qAxis([0, 0, 1], deg), BASE_Q);
   assert.deepEqual(run(t => yawQ(Math.min(30, t / 40))), [], '慢慢转头');
-  assert.deepEqual(run(t => yawQ(t < 200 ? 0 : Math.min(25, (t - 200) / 6))), [], '转过去停住');
-  assert.deepEqual(run(t => flickQ('left', t - 200, 70, 300, 400)), [], '大幅转头');
+  assert.deepEqual(run(t => yawQ(t < 200 ? 0 : Math.min(25, (t - 200) / 6))), ['left'], '甩过去停住也算');
+  assert.deepEqual(run(t => flickQ('left', t - 200, 70, 300, 400)), ['left'], '大幅甩头只算一次，回正不算向右');
+  // 回正之后再往右甩：过了反向保护时间就算
+  assert.deepEqual(run(t => flickQ('left', t - 200)[0] !== undefined && t < 1600 ? flickQ('left', t - 200) : flickQ('right', t - 1600), 2500), ['left', 'right']);
   assert.deepEqual(run(t => qMul(qAxis([1, 0, 0], 3 * Math.sin(t / 1000 * 4 * Math.PI)), BASE_Q), 3000), [], '走路颠簸');
   // 冷却：紧接着的第二次甩不触发
   assert.deepEqual(run(t => flickQ('left', t < 600 ? t - 200 : t - 700)), ['left']);
