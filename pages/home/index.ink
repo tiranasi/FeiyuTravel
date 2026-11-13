@@ -389,8 +389,8 @@ export default {
   },
   onHeadGesture(event) {
     const gesture = event && (event.gesture || event.type);
+    // 0.8.9 起不再响应系统点头：上下轻甩常被系统判成点头，和“晃一晃”冲突。只记日志。
     log('head gesture', String(gesture));
-    if (this.visible && this.app && gesture === 'nod') this.app.nod();
   },
   onVoiceWakeup(event) {
     if (!this.visible || !this.app) return;

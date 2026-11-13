@@ -264,7 +264,7 @@ function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', visio
       h.listenHandlers = handlers;
       return { stop() { handlers.onEnd('你好呀'); }, abort() { h.listenHandlers = null; } };
     },
-    chat: { create: async system => { h.systems.push(system); return {}; }, prompt: async (session, text) => { h.prompts.push(text); return voiceReply; }, destroy() {} },
+    chat: { create: async system => { h.systems.push(system); return {}; }, prompt: async (session, text) => { h.prompts.push(text); return typeof voiceReply === 'function' ? voiceReply(text) : voiceReply; }, destroy() {} },
     vision,
     speech: { speak(text) { h.spoken.push(text); h.speaking = true; }, stop() { h.speaking = false; } }
   });
@@ -476,9 +476,10 @@ test('全流程冒烟：首页 → 载入 → 主页 → 召唤 → 菜单 → �
   for (let i = 0; i < 30; i += 1) step(40);
   app.back(); app.back();
   run(1500);
-  app.nod();
+  app.view.dockFocus = app.view.dock.findIndex(d => d.id === 'call');
+  app.confirm();
   run(1500);
-  assert.equal(app.view.screen, 'close', '点头呼唤');
+  assert.equal(app.view.screen, 'close', '呼唤');
   app.back();
   run(120000, 120);
   app.hide();
@@ -885,6 +886,13 @@ test('甩头识别：甩够就触发、不要求回正，回正不算反向；�
   // 冷却：紧接着的第二次甩不触发
   assert.deepEqual(run(t => flickQ('left', t < 600 ? t - 200 : t - 700)), ['left']);
   assert.equal(run(() => [0, 0, 0, 0]).length, 0, '无效四元数被忽略');
+  // 0.8.9：轻甩 6° 也能触发（不用猛甩），四个方向一样；读数 57 次/秒时同样
+  for (const dir of ['left', 'right', 'up', 'down']) assert.deepEqual(run(t => flickQ(dir, t - 200, 6, 120, 200)), [dir], `轻甩 ${dir}`);
+  const fast = fn => { const d = createShakeDetector(); const out = []; for (let t = 0; t <= 1500; t += 17) { const e = d.feed(T0 + t, fn(t)); if (e) out.push(e.dir); } return out; };
+  assert.deepEqual(fast(t => flickQ('up', t - 200, 7, 150, 200)), ['up'], '57Hz 轻甩');
+  const both = (yaw, pitch) => qMul(qAxis([1, 0, 0], pitch), qMul(qAxis([0, 0, 1], yaw), BASE_Q));
+  assert.deepEqual(fast(t => both(1.5 * Math.sin(t / 300), 4 * Math.sin(t / 1000 * 4 * Math.PI))), [], '走路时上下来回晃');
+  assert.deepEqual(fast(t => both(Math.min(40, t / 45), 0)), [], '慢慢转头看东西');
 });
 
 function homeHarness(store) {
@@ -917,7 +925,7 @@ test('晃一晃：甩向相邻停靠点，边上撞墙弹回，连甩三次会�
   assert.equal(v.pet.corner, 5, '到了下中');
   assert.equal(v.pet.tp, null);
   h.flick('up');
-  run(400);   // 上下甩先等系统点头一会儿
+  run(100);
   assert.equal(v.pet.tp.to, 4, '到了上中');
   run(1200);
   assert.equal(v.pet.corner, 4);
@@ -938,18 +946,20 @@ test('晃一晃：甩向相邻停靠点，边上撞墙弹回，连甩三次会�
   for (const w of [IDLE_MUTTER.shake, IDLE_MUTTER.bump, IDLE_MUTTER.dizzy, IDLE_MUTTER.pout]) assert.ok(w.length);
 });
 
-test('晃一晃：系统点头送达时上下甩让给点头；离开首页或关闭设置后不要传感器', () => {
+test('晃一晃：上下甩立即生效（0.8.9 不再响应点头）；离开首页或关闭设置后不要传感器', () => {
   const h = homeHarness();
   const { app, run } = h;
   const v = app.view;
   v.pet.corner = 0;
   for (let t = 0; t < 330; t += 33) { h.step(33); app.motion(v.now, flickQ('down', t - 60)); }
-  assert.ok(v.imu.pendingV, '识别到下甩，等待中');
-  app.nod();
-  run(400);
-  assert.ok(!v.pet.tp || v.pet.tp.kind !== 'shake', '点头优先');
+  assert.equal(v.pet.tp && v.pet.tp.kind, 'shake', '下甩直接移动');
+  assert.equal(v.pet.tp.to, 2, '左上 → 左下');
+  assert.equal(app.nod, undefined, '没有点头入口');
   run(1500);
-  assert.equal(v.screen, 'close', '点头呼唤照常');
+  v.dockFocus = v.dock.findIndex(d => d.id === 'call');
+  app.confirm();
+  run(1500);
+  assert.equal(v.screen, 'close');
   assert.equal(app.wantsMotion(), false, '近景不需要传感器');
   app.back();
   run(1500);
@@ -1051,4 +1061,80 @@ test('亲密度升级仪式：回到主页时依次补办，收下后进图鉴�
   v.menu.focus = 20;
   h.run(80);
   assert.ok(h.screens.has('gift') && h.screens.has('menu'));
+});
+
+// ---------------------------------------------------------------- 回忆（0.8.9）
+test('回忆：模型标签记下、过滤隐私、去重、上限，忘记与清空；进提示词和存档', () => {
+  const s = Game.newState(T0);
+  const r = parseReply('[开心]好呀，记住啦！[记住：你喜欢猫]');
+  assert.equal(r.text, '好呀，记住啦！');
+  assert.equal(r.mood, 'happy');
+  assert.deepEqual(r.memo.remember, ['你喜欢猫']);
+  assert.equal(parseReply('[开心]嗯').memo, undefined, '没有标签不带 memo');
+  assert.equal(Game.remember(s, '你喜欢猫', T0), '你喜欢猫');
+  assert.equal(Game.remember(s, '你的手机号是13800138000', T0), null, '号码不记');
+  assert.equal(Game.remember(s, '你家地址在幸福路', T0), null, '地址不记');
+  Game.remember(s, '你喜欢猫和狗', T0 + 1);
+  assert.deepEqual(Game.memoryTexts(s), ['你喜欢猫和狗'], '互相包含的旧条目被替换');
+  for (let i = 0; i < 8; i += 1) Game.remember(s, `爱好${i}号`, T0 + 2 + i);
+  assert.equal(s.memory.length, Game.MEMORY_MAX);
+  assert.equal(Game.forget(s, '爱好7'), 1);
+  const saved = Game.normalize(JSON.parse(JSON.stringify(s)), T0);
+  assert.deepEqual(Game.memoryTexts(saved), Game.memoryTexts(s), '存档往返');
+  assert.equal(Game.normalize({}, T0).memory.length, 0, '旧档没有回忆');
+  assert.ok(systemPrompt('状态', 0, ['你喜欢猫']).includes('你喜欢猫'));
+  assert.ok(!systemPrompt('状态', 0, []).includes('你记得关于用户的事'));
+  assert.equal(Game.forget(s, '全部'), Game.MEMORY_MAX - 1);
+  assert.equal(s.memory.length, 0);
+});
+
+test('回忆：聊天回复里的标签生效并提示；本地兜底台词不进上下文；旅行剩余时间只给粗档', async () => {
+  const f = fakeVision();
+  const h = harness({ vision: f.vision, voiceReply: text => text.includes('吉他') ? '[开心]知道啦[记住：你在学吉他]' : '' });
+  await toClose(h);
+  const v = h.app.view;
+  const talk = async text => {
+    v.dockFocus = v.dock.findIndex(d => d.id === 'talk');
+    h.app.confirm();
+    h.run(200);
+    h.listenHandlers.onEnd(text);
+    await flush(); await flush();
+    h.run(400);
+  };
+  await talk('我最近在学吉他');
+  assert.deepEqual(Game.memoryTexts(v.g), ['你在学吉他']);
+  assert.ok(v.toast && v.toast.text.includes('你在学吉他'), '提示她记住了');
+  assert.ok(!v.close.bubble.text.includes('记住'), '标签不显示');
+  await talk('随便说说');
+  v.dockFocus = v.dock.findIndex(d => d.id === 'look');
+  h.app.confirm();
+  f.shutter();
+  await flush(); await flush(); await flush();
+  h.run(200);
+  const sys = f.log.prompts[0].system;
+  assert.ok(sys.includes('我最近在学吉他') && !sys.includes('随便说说'), '模型失败时的本地台词不当成上下文');
+  assert.ok(sys.includes('你在学吉他'), '识图也带上回忆');
+  assert.equal(Game.roughSpan(3 * 60000), '一会儿');
+  assert.equal(Game.roughSpan(70 * 60000), '一小时左右');
+  v.g.trip = { dest: DESTS[0].id, returnAt: T0 + 25 * 60000 };
+  assert.equal(Game.statusLine(v.g, T0), Game.statusLine(v.g, T0 + 60000), '一分钟后状态不变');
+});
+
+test('回忆：首页设置里连点两下才清除，单点只提示', () => {
+  const h = harness();
+  h.run(800);
+  const v = h.app.view;
+  Game.remember(v.g, '你喜欢猫', T0);
+  v.title.panel = { focus: 3, at: v.now, closeAt: 0, flipAt: 0 };
+  h.app.confirm();
+  h.run(100);
+  assert.equal(v.g.memory.length, 1, '第一下只提示');
+  h.app.confirm();
+  assert.equal(v.g.memory.length, 0, '3 秒内第二下清除');
+  assert.equal(Game.normalize(JSON.parse(h.store.get(Game.SAVE_KEY)), T0).memory.length, 0, '已存档');
+  Game.remember(v.g, '你喜欢狗', T0);
+  h.app.confirm();
+  h.run(3500);
+  h.app.confirm();
+  assert.equal(v.g.memory.length, 1, '隔太久重新计');
 });

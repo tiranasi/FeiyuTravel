@@ -22,6 +22,8 @@
 - 旅行通话（0.6.0）：她在外地时主页“呼唤”变“通话”，画面走 close 屏但 `v.close.call` 非空，底栏 `DOCK_CALL`（说话/看看/挂断），每次旅行 `CALLS_PER_TRIP` 次免费，之后每次消耗一个信标流量（0.7.3，`Game.useCall`；商店用 `SHOP_ORDER`，行囊仍用 `ITEM_ORDER`）。占位美术统一登记在 `docs/ART-HANDOFF-PENDING.md`。全息波动参数在 `lib/draw.js` 的 `HOLO`，横带由 `lib/sprites.js` 预切（`STRIP_BANDS`），不要改回逐带 clip 重画（真机太慢）。
 - 共享代码 `lib/app.js`、`game.js`、`content.js`、`scenes.js`、`title.js`、`draw.js`、`postcards.js`、`sprites.js`、`camera.js` 不依赖 DOM 或 localStorage，宿主能力（存储、聆听、模型、朗读）通过 `createApp(host)` 注入。新增 lib 文件要同时加进 `scripts/aix.mjs` 的 LIB 列表。
 - 0.4.0 新增游戏首页与互动教程，TTS 用 `host.speech`。开始聆听前必须停播；主页自言自语不出声；不做常驻聆听（用户已明确不要）。系统唤醒词无法修改。
+- 回忆（0.8.9，用户决定）：只保存她用 `[记住：…]` 标签记下的长期小事，最多 6 条，`Game.remember` 会过滤号码、地址、账号、通知、联系人等隐私字眼；日志只记条数。不要扩大成保存聊天记录或手机通知内容。设置里的“她的回忆”可清空。
+- 不再响应系统点头（0.8.9）：`onHeadGesture` 只记日志，上下甩不用再让给点头。
 - 晃一晃（0.8.0）：甩头识别在 `lib/motion.js`（纯计算），页面按 `app.wantsMotion()` 启停 `AbsoluteOrientationSensor`，离开首页必须 `stop()`。停靠点 `CORNERS` 有 6 个（4 角 + 上中/下中），朝向用 `faceRight(corner)`，不要再用 `corner % 2`。新待机加在 `app.js` 的 `ACT_WEIGHT`、`scenes.js` 的 `petPose`/`petEffects`、`content.js` 的 `IDLE_MUTTER`。`demo=shake` 只用于检查画面。
 - 画精灵一律用 `draw.js` 的 `blit()`，不要直接 `ctx.drawImage`：真机上 drawImage 会乘上当前 fillStyle 的透明度（0.7.1 实测），blit 先把 fillStyle 设成不透明黑。
 - 只使用真机已画出的 Canvas 方法；`npm run check` 会扫描禁用调用，并运行 `tests/lvfeiyu.test.mjs`。
