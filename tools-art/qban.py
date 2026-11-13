@@ -127,6 +127,21 @@ def main():
     c = c[:ys.max() + 1]
     c = np.pad(c, ((0, GROUND - c.shape[0]), (0, 0))) if c.shape[0] < GROUND else c
     g, lift = body(c, sb); meta[a['id']] = lift; out[a['id']] = g
+  # 版式不是 4×2 的图集（additionalAtlases，如 L 批 2×1）：按每帧 sourceRect 取格。
+  # 原生格子比 4×2 大，同一图集共用一个缩放：以第一帧（站姿）的身高换算到 BODY_REF，再按本图集的地面线对齐。
+  for atlas in man.get('additionalAtlases', []):
+    if atlas.get('kind') != 'body': continue
+    L = lum(Image.open(ROOT + '/' + atlas['file']))
+    rect = lambda r: L[r['y']:r['y'] + r['height'], r['x']:r['x'] + r['width']]
+    ground = atlas['ground']['bottomExclusive']
+    first = rect(atlas['frames'][0]['sourceRect'])
+    ys = np.where(first.max(axis=1) > 0)[0]
+    k = BODY_REF / (ground - ys.min())
+    for f in atlas['frames']:
+      if f['id'] in RETIRED: continue
+      c = rect(f['sourceRect'])
+      c = resize(c, round(c.shape[1] * k), round(c.shape[0] * k))
+      g, lift = body(c, sb, round(ground * k)); meta[f['id']] = lift; out[f['id']] = g
   # 识图指认：8 帧并集裁切，统一缩放
   frames = [lum(Image.open(f'{PD}/frame-{i:02d}.png')) for i in range(1, 9)]
   u = np.maximum.reduce(frames)
@@ -148,7 +163,7 @@ def main():
   lines.append('};')
   open('lib/qban-data.js', 'w', encoding='utf8').write('\n'.join(lines) + '\n')
   print('frames', len(out), 'pixels', total)
-  for k in ('body_front', 'bust_neutral', 'icon_shell', 'pd5', 'chase_jump', 'trip_pack', 'shake_fly', 'shake_tumble_a', 'idle_bubble', 'idle_fish', 'shake_pout', 'icon_beacon'):
+  for k in ('body_front', 'bust_neutral', 'icon_shell', 'pd5', 'chase_jump', 'trip_pack', 'shake_fly', 'shake_tumble_a', 'idle_bubble', 'idle_fish', 'shake_pout', 'icon_beacon', 'gift_present', 'bond_give', 'bond_shy'):
     print(k, out[k].shape[::-1], meta.get(k))
 
 if __name__ == '__main__': main()

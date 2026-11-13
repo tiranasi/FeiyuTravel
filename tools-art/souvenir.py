@@ -75,7 +75,7 @@ def main():
     cards[p['id']] = (g.shape[1], g.shape[0], packed)
     preview(back[:g.size].reshape(g.shape).astype(np.uint8), f"build/art/souvenir/{p['id']}.png", 1)
     stats[p['id']] = round(float((g > 179).mean()), 4)
-  out = ['// 由 tools-art/souvenir.py 生成：纪念品图标（souvenir-postcard J1–J3），只取亮度 max(R,G,B)，单通道 0–255。', 'export const GIFT_ART={']
+  out = ['// 由 tools-art/souvenir.py 生成：纪念品图标（souvenir-postcard J1–J4，J4 为亲密信物），只取亮度 max(R,G,B)，单通道 0–255。', 'export const GIFT_ART={']
   for name, g in gifts.items():
     out.append(f'  {name}:{{w:{g.shape[1]},h:{g.shape[0]},d:"{base64.b64encode(g.tobytes()).decode()}"}},')
   out.append('};')

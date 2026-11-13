@@ -162,7 +162,7 @@ test('精灵数据尺寸与镜像解码', () => {
   const all = { ...SPRITES, ...QBAN };
   for (const name of Object.keys(all)) assert.equal(Buffer.from(all[name].d, 'base64').length, all[name].w * all[name].h, name);
   // 用户确认的 80 格 Q 版原画 + 识图指认 8 帧 + 0.8.0 批次 J/K 16 格、叉腰生气、信标流量图标，全部进入解码顺序
-  assert.equal(Object.keys(QBAN).length, 100);   // 0.8.6 停用 6 个 pc_* 明信片动作帧
+  assert.equal(Object.keys(QBAN).length, 102);   // 0.8.6 停用 6 个 pc_* 明信片动作帧；0.8.7 加升级仪式 bond_give / bond_shy
   for (const name of Object.keys(QBAN)) assert.ok(SPRITE_ORDER.includes(name), `未使用的帧：${name}`);
   assert.equal(new Set(SPRITE_ORDER).size, SPRITE_ORDER.length, '解码顺序无重复');
   // 带像素存储的假 Canvas：putImageData(image, x, y) 写进对应位置
@@ -1020,9 +1020,11 @@ test('亲密度升级仪式：回到主页时依次补办，收下后进图鉴�
   const h = homeHarness();
   const v = h.app.view;
   const scales = v.g.scales;
+  while (!h.app.view.cache.bond_shy) h.run(200);   // 等后台解完仪式帧
   v.g.affinity = 40;
   h.run(400);
   assert.equal(v.screen, 'gift');
+  for (const id of ['gift_ribbon', 'gift_badge', 'gift_letter', 'bond_give', 'bond_shy']) assert.ok(v.cache[id], `${id} 已解码`);
   assert.equal(v.giftView.bond, 1);
   assert.equal(h.spoken.at(-1), AFFINITY[1].up);
   h.run(1000);
