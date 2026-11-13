@@ -214,7 +214,7 @@ function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', visio
   let clock = T0;
   const timers = [];
   class FakeCanvas { constructor(w, h) { this.w = w; this.h = h; } getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {}, flush() {} }; } }
-  const h = { listenHandlers: null, spoken: [], speaking: false, listenWhileSpeaking: 0, store };
+  const h = { listenHandlers: null, spoken: [], speaking: false, listenWhileSpeaking: 0, store, systems: [] };
   const app = createApp({
     now: () => clock,
     storage: { get: k => store.get(k), set: (k, v) => store.set(k, v) },
@@ -229,7 +229,7 @@ function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', visio
       h.listenHandlers = handlers;
       return { stop() { handlers.onEnd('你好呀'); }, abort() { h.listenHandlers = null; } };
     },
-    chat: { create: async () => ({}), prompt: async () => voiceReply, destroy() {} },
+    chat: { create: async system => { h.systems.push(system); return {}; }, prompt: async () => voiceReply, destroy() {} },
     vision,
     speech: { speak(text) { h.spoken.push(text); h.speaking = true; }, stop() { h.speaking = false; } }
   });
@@ -527,6 +527,97 @@ test('相机模块：getUserMedia → ImageCapture → 预热 → 无参 takePho
   let current = true;
   const p2 = capturePhoto(null, { isCurrent: () => current, onStage: s => { if (s === 'warmup') current = false; } }, null, root);
   await assert.rejects(p2, e => e.name === 'AbortError');
+});
+
+// ---------------------------------------------------------- 旅行通话
+async function toTripHome(h, returnAt = 1e15) {
+  h.run(800);
+  h.app.view.title.focus = 0;
+  h.app.confirm();
+  h.run(7400);
+  h.run(1500);
+  const v = h.app.view;
+  assert.equal(v.screen, 'home');
+  v.g.trip = { dest: 'market', food: 'onigiri', charm: null, leftAt: 0, returnAt, seed: 7, cards: [], calls: 0 };
+  v.pet.present = false;
+  v.pet.tp = null;
+  h.run(200);
+  assert.equal(v.dock[0].label, '通话', '旅行中呼唤变成通话');
+  v.dockFocus = 0;
+}
+
+test('旅行通话：拨号后全息出现，可聊天和看看，挂断后她仍在旅行；每次旅行限 3 次', async () => {
+  const f = fakeVision();
+  const h = harness({ vision: f.vision });
+  await toTripHome(h);
+  const v = h.app.view;
+  h.app.confirm();
+  assert.equal(v.screen, 'close');
+  assert.ok(v.close.call, '进入通话');
+  assert.equal(v.g.trip.calls, 1);
+  assert.deepEqual(v.dock.map(d => d.id), ['talk', 'look', 'hangup'], '通话中没有摸头、戳戳');
+  h.run(2400);
+  assert.ok(h.spoken.at(-1).includes('霓虹夜市'), '接通后招呼语带地点');
+  // 聊天：提示词说明她在外地通话
+  h.app.confirm();
+  h.listenHandlers.onEnd('那边好玩吗');
+  await flush(); await flush();
+  h.run(200);
+  assert.ok(h.systems.at(-1).includes('远程信标') && h.systems.at(-1).includes('霓虹夜市'));
+  // 看看：识图提示词同样带通话状态
+  v.dockFocus = 1;
+  h.app.confirm();
+  f.shutter();
+  await flush(); await flush(); await flush();
+  h.run(200);
+  assert.ok(f.log.prompts[0].system.includes('远程信标'));
+  assert.equal(v.close.phase, 'discover');
+  h.run(500);
+  assert.equal(h.app.back(), true);
+  h.app.back();
+  h.run(800);
+  assert.equal(v.screen, 'home', '挂断回到主页');
+  assert.equal(v.close.call, null);
+  assert.equal(v.pet.present, false, '她还在旅行');
+  assert.ok(v.g.trip);
+  for (let i = 0; i < 2; i += 1) {
+    v.dockFocus = 0;
+    h.app.confirm();
+    h.run(2200);
+    h.app.back();
+    h.run(800);
+  }
+  assert.equal(v.g.trip.calls, 3);
+  v.dockFocus = 0;
+  h.app.confirm();
+  assert.equal(v.screen, 'home', '次数用完不再接通');
+  assert.ok(v.toast.text.includes('能量用完'));
+  assert.ok(Object.values(v.cache).some(e => e.strips && e.strips.length === 10), '通话用到的帧已切成全息横条');
+});
+
+test('旅行通话：通话中她到家会挂断并现身，超时信号飘走', async () => {
+  const h = harness();
+  await toTripHome(h);
+  const v = h.app.view;
+  h.app.confirm();
+  h.run(2400);
+  h.run(150000, 400);
+  assert.ok(v.close.call && v.close.call.dropAt, '超时后信号飘走');
+  h.run(3200);
+  assert.equal(v.screen, 'home');
+  assert.equal(v.pet.present, false);
+  // 再打一通，期间旅行结束
+  v.dockFocus = 0;
+  h.app.confirm();
+  h.run(2400);
+  v.g.trip.returnAt = 0;
+  h.run(400);
+  assert.ok(v.close.call.returned);
+  h.run(3600);
+  assert.equal(v.screen === 'home' || v.screen === 'gift', true);
+  assert.equal(v.pet.present, true, '回家后现身');
+  h.run(3000);
+  assert.equal(v.screen, 'gift', '落地后弹出礼物');
 });
 
 test('教程所有步骤可绘制', () => {
