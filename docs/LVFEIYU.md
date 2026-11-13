@@ -167,7 +167,7 @@
 | `tools-art/souvenir.py` | 从 souvenir-postcard 生成 `lib/gift-data.js`（18 个 `gift_*`，长边 96px，8 位）与 `lib/card-data.js`（18 张 `card_<地点>_<n>`，408×184，4 位亮度两像素一字节）：`PYTHONPATH=build/pylibs python tools-art/souvenir.py`，预览输出到 `build/art/souvenir/` |
 | `tools-art/convert.py` | 生成 `lib/sprite-data.js`（只含载入页全息像 holo）；旧的正常色三视图转换移到 `--colour`，只输出到 `build/art` |
 | `web/lvfeiyu.html` | 本机预览外壳（`npm run dev`，`?fast=1`），不打入 AIX |
-| `tests/lvfeiyu.test.mjs` | 26 项测试：纪念品图标与明信片插画（按需 4 位解码、文案对应、动效白名单）、图鉴详情、设置弹窗与快速旅行、规则、存档、分批解码、首页、教程、朗读与聆听互斥、看看（成功/取消/无权限/无宿主）、相机模块、旅行通话（拨号、提示词、挂断、次数上限、到家挂断、信号飘走）、全流程冒烟 |
+| `tests/lvfeiyu.test.mjs` | 35 项测试（含亲密度）：纪念品图标与明信片插画（按需 4 位解码、文案对应、动效白名单）、图鉴详情、设置弹窗与快速旅行、规则、存档、分批解码、首页、教程、朗读与聆听互斥、看看（成功/取消/无权限/无宿主）、相机模块、旅行通话（拨号、提示词、挂断、次数上限、到家挂断、信号飘走）、全流程冒烟 |
 
 渲染只用义眼盯真真机上已画出的 Canvas 能力：rgba、globalAlpha、虚线、clip、路径、弧线、贝塞尔曲线、measureText，以及 `drawImage(缓存Canvas, x, y, w, h)`。`npm run check` 会拒绝 `ctx.scale / rect / ellipse / translate / transform` 和 `lighter` 混合；冒烟测试用白名单假 ctx 走完所有画面。
 

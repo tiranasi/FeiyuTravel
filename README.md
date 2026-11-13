@@ -5,7 +5,7 @@
 - 设计、经济、代码结构与真机验证：[docs/LVFEIYU.md](docs/LVFEIYU.md)
 - Q 版动画素材清单与绘制交接（已确认黑底绿色画风，`tools-art/qban.py` 转换）：[docs/ART-HANDOFF-QBAN.md](docs/ART-HANDOFF-QBAN.md)
 - 本机预览：`npm run dev`，打开 <http://127.0.0.1:4173/>（加 `?fast=1` 让时间加速）
-- 检查：`npm run check`（配置、语法、Canvas 白名单、26 项测试）
+- 检查：`npm run check`（配置、语法、Canvas 白名单、35 项测试）
 - 真机：`npm run install -- --params '{"debug":"fast"}'`，以及 `npm run launch`
 - 操作：前滑/后滑切换底栏，单击确认；双击镜腿返回：退出菜单、送她回角落；在主页双击回到首页，在首页双击退出应用。也可以用语音唤醒呼唤她。她会用 TTS 说话，可以在首页关闭。
 
@@ -17,15 +17,7 @@
 
 独立的 AIUI 真机显示实验，当前版本 0.2.0，画布 480×320。不请求相机、位置、麦克风或模型权限，不覆盖现有义眼应用。
 
-## 本机 HTML 开发版
-
-2026-11-12 按用户最新要求收敛为 **霓潮 · 当次对话＋主动看一眼＋四个成就**。不做经济、喂食、远游或长期记忆；聊天只在当次会话中保留，持久化仅含成就ID。默认入口已经切换为精简版，旧完整原型保留在 `/web/full-prototype.html`，原存档不变。当前范围见 [web/POCKET.md](web/POCKET.md)。
-
-已用独立 AIUI 诊断包在当前 RG_glasses 上完成多轮上下文、对话触发成就、关闭重开与真实重启测试。没有替换原显示包或义眼应用。结果见 [docs/RUNTIME-20261112.md](docs/RUNTIME-20261112.md)。精简玩法仍在本机预览，未作为正式眼镜应用安装。
-
-运行 `npm run dev`，打开 <http://127.0.0.1:4173/>。HTML 外壳用于电脑迭代，不代表功能已经迁移至 AIUI。物体输入仍明确标为模拟，不调用第三方模型。
-
-运行说明见 [web/README.md](web/README.md)，迁移边界和接口映射见 [web/AIUI-MIGRATION.md](web/AIUI-MIGRATION.md)。新增检查为 `npm run test:web`、`npm run test:browser`。浏览器视觉输入与旅行内容明确标记为模拟，不调用第三方模型。
+本机 HTML 原型（霓潮精简版、完整玩法版、全息动画预览）已在 0.8.5 之后移除，需要回溯时查 Git 历史（提交 c330577 及以前）。
 
 ## Canvas 缓存播放（当前默认）
 
