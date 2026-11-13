@@ -1,12 +1,12 @@
 # 旅行肥鱼 待补美术清单
 
-游戏里先用 Canvas 占位、之后需要补画的素材都记在这里。画风沿用 `ART-HANDOFF-QBAN.md` 第 0 节与 `ART-HANDOFF-SOUVENIR-POSTCARD.md` 第 2～3 节的用户确认版：**黑底绿色**，亮绿粗外轮廓、暗绿块面、较暗内部线条，图里不要有文字、光晕、模糊。
+游戏里先用 Canvas 占位、之后需要补画的素材都记在这里。0.8.0 已按 `qban-v2/manifest.json` 选用 J-v4、K-v3、J-9（`shake_pout`）和 `lvfy-icon-beacon.png`，由 `tools-art/qban.py` 转入 `lib/qban-data.js`（J/K 画布 1774×887，站姿地面线 419，见 `GROUND_BY_BATCH`；单独交付的素材走 `standaloneAssets`）。画风沿用 `ART-HANDOFF-QBAN.md` 第 0 节与 `ART-HANDOFF-SOUVENIR-POSTCARD.md` 第 2～3 节的用户确认版：**黑底绿色**，亮绿粗外轮廓、暗绿块面、较暗内部线条，图里不要有文字、光晕、模糊。
 
 | 状态 | ID | 用在哪里 | 占位实现 | 加入版本 |
 | --- | --- | --- | --- | --- |
-| 待画 | `icon_beacon` | 商店“信标流量”一项的左上角大图标（与饭团、罗盘等商品图标同位置、同尺寸） | `lib/scenes.js` 的 `beaconIcon()`：底座上的菱形发射器，向上一圈圈发出信号弧 | 0.7.3 |
-| 待画 | 批次 J（8 格）`shake_*` | 首页“晃一晃”：轻甩头把她晃到画面另一处（IMU） | 现有帧 + 程序残影：`chase_jump`/`chase_spin` 飞行、`tp_stumble`/`chase_land` 落地、`bust_dizzy` 不可用于全身 | 0.8（计划） |
-| 待画 | 批次 K（8 格）`idle_*` 新待机 | 首页随机待机动作扩充 | 无；先用现有帧做 5 个新动作（见下文“现在就能加的待机”） | 0.8（计划） |
+| 已接入代码（真机待看） | `icon_beacon` | 商店“信标流量”一项的左上角大图标（与饭团、罗盘等商品图标同位置、同尺寸） | `lib/scenes.js` 的 `beaconIcon()`：底座上的菱形发射器，向上一圈圈发出信号弧 | 0.7.3 |
+| 已接入代码（真机待看） | 批次 J（8 格 + `shake_pout`）`shake_*` | 首页“晃一晃”：轻甩头把她晃到画面另一处（IMU） | 现有帧 + 程序残影：`chase_jump`/`chase_spin` 飞行、`tp_stumble`/`chase_land` 落地、`bust_dizzy` 不可用于全身 | 0.8（计划） |
+| 已接入代码（真机待看） | 批次 K（8 格）`idle_*` 新待机 | 首页随机待机动作扩充 | 无；先用现有帧做 5 个新动作（见下文“现在就能加的待机”） | 0.8（计划） |
 
 ---
 

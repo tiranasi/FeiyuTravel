@@ -26,6 +26,8 @@ BUST_REF = 424
 ICON_H = 40
 PD_H = 210          # 识图指认整组高度
 PAD = 2
+# 个别批次的站姿脚底比 A 批高几像素（原生格子像素），按本批站姿实测地面线对齐，避免悬空。
+GROUND_BY_BATCH = {'J': 419, 'K': 419}
 
 def lum(im):
   a = np.asarray(im.convert('RGB')).astype(np.float32)
@@ -53,9 +55,9 @@ def xspan(c):
   xs = np.where(c.max(axis=0) > 0)[0]
   return xs.min(), xs.max() + 1
 
-def body(c, s):
+def body(c, s, ground=GROUND):
   ys = np.where(c.max(axis=1) > 0)[0]
-  top, bottom = ys.min(), max(GROUND, ys.max() + 1)
+  top, bottom = ys.min(), max(ground, ys.max() + 1)
   x0, x1 = xspan(c)
   crop = c[top:bottom, x0:x1]
   g = finish(resize(crop, max(1, round(crop.shape[1] * s)), max(1, round(crop.shape[0] * s))))
@@ -104,10 +106,22 @@ def main():
       kind = b['kind']
       if kind == 'mixed': kind = 'bust' if fid.startswith('bust_') or fid == 'peek_edge' else 'body'
       if kind == 'body':
-        g, lift = body(c, sb); meta[fid] = lift
+        g, lift = body(c, sb, GROUND_BY_BATCH.get(b['batch'], GROUND)); meta[fid] = lift
       elif kind == 'bust': g = bust(c, sq)
       else: g = icon(c)
       out[fid] = g
+  # 单独交付的素材（standaloneAssets）：全身帧按站姿高度换算，图标按图标规格
+  for a in man.get('standaloneAssets', []):
+    L = lum(Image.open(ROOT + '/' + a['file']))
+    if a['kind'] == 'icon':
+      out[a['id']] = icon(L); continue
+    ys = np.where(L.max(axis=1) > 0)[0]
+    k = BODY_REF / (ys.max() + 1 - ys.min())
+    c = resize(L, round(L.shape[1] * k), round(L.shape[0] * k))
+    ys = np.where(c.max(axis=1) > 0)[0]
+    c = c[:ys.max() + 1]
+    c = np.pad(c, ((0, GROUND - c.shape[0]), (0, 0))) if c.shape[0] < GROUND else c
+    g, lift = body(c, sb); meta[a['id']] = lift; out[a['id']] = g
   # 识图指认：8 帧并集裁切，统一缩放
   frames = [lum(Image.open(f'{PD}/frame-{i:02d}.png')) for i in range(1, 9)]
   u = np.maximum.reduce(frames)
@@ -129,7 +143,7 @@ def main():
   lines.append('};')
   open('lib/qban-data.js', 'w', encoding='utf8').write('\n'.join(lines) + '\n')
   print('frames', len(out), 'pixels', total)
-  for k in ('body_front', 'bust_neutral', 'icon_shell', 'pd5', 'chase_jump', 'trip_pack'):
+  for k in ('body_front', 'bust_neutral', 'icon_shell', 'pd5', 'chase_jump', 'trip_pack', 'shake_fly', 'shake_tumble_a', 'idle_bubble', 'idle_fish', 'shake_pout', 'icon_beacon'):
     print(k, out[k].shape[::-1], meta.get(k))
 
 if __name__ == '__main__': main()

@@ -7,7 +7,8 @@
       "type": "object",
       "properties": {
         "debug": { "type": "string", "enum": ["fast"], "description": "调试：fast=时间加速120倍" },
-        "reset": { "type": "string", "enum": ["1"], "description": "调试：清空存档重新开始" }
+        "reset": { "type": "string", "enum": ["1"], "description": "调试：清空存档重新开始" },
+        "demo": { "type": "string", "enum": ["shake"], "description": "调试：shake=不读传感器，每4秒合成一次甩头姿态序列（只用于检查画面）" }
       }
     }
   }
@@ -21,6 +22,23 @@ import { createApp } from '../../lib/app.js';
 import { createDecoder } from '../../lib/sprites.js';
 import { SAVE_KEY } from '../../lib/game.js';
 import { capturePhoto, shrinkPhoto, toDataUrl, IMAGE_MAX_EDGE, IMAGE_QUALITY } from '../../lib/camera.js';
+import { qAxis, qMul } from '../../lib/motion.js';
+
+const MOTION_HZ = 30;
+const MOTION_RETRY_MS = 30000;
+// 调试 demo=shake：合成“基准姿态 + 一次轻甩”的四元数，走与真传感器相同的识别路径
+const DEMO_BASE = qAxis([1, 0, 0], -90);
+const DEMO_DIRS = ['left', 'right', 'right', 'right', 'up', 'down', 'down', 'left', 'left'];
+function demoFlick(dir, ms) {
+  const amp = 15;
+  const go = 110;
+  const back = 170;
+  const k = ms < go ? ms / go : ms < go + back ? 1 - (ms - go) / back : 0;
+  const a = amp * k;
+  const yaw = dir === 'left' ? a : dir === 'right' ? -a : 0;
+  const pitch = dir === 'up' ? a : dir === 'down' ? -a : 0;
+  return qMul(qAxis([1, 0, 0], pitch), qMul(qAxis([0, 0, 1], yaw), DEMO_BASE));
+}
 
 const FRAME_MS = 40;
 const WAKE_GUARD_MS = 2500;
@@ -244,6 +262,7 @@ export default {
     if (typeof this.enableWorldAwareness === 'function') {
       try { this.enableWorldAwareness(); log('world awareness on'); } catch (error) { log('world awareness unavailable', errorText(error)); }
     }
+    this.demoShake = query.demo === 'shake';
     this.visible = true;
     this.shownAt = Date.now();
   },
@@ -255,11 +274,91 @@ export default {
     this.loop();
   },
   onReady() { this.ready = true; this.loop(); },
-  onHide() { log('hide'); this.visible = false; this.stop(); if (this.app) this.app.hide(); },
-  onUnload() { log('unload'); this.visible = false; this.stop(); if (this.app) this.app.hide(); speech.stop(); },
+  onHide() { log('hide'); this.visible = false; this.stop(); this.stopMotion('hide'); if (this.app) this.app.hide(); },
+  onUnload() { log('unload'); this.visible = false; this.stop(); this.stopMotion('unload'); if (this.app) this.app.hide(); speech.stop(); },
   stop() {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+  },
+  // ---------------- 晃一晃：姿态传感器只在首页、她在场、设置打开时运行（app.wantsMotion），离开立即释放
+  motion: null,
+  motionFailAt: 0,
+  demoShake: false,
+  syncMotion() {
+    const want = !!(this.visible && this.app && this.app.wantsMotion());
+    if (want && !this.motion) this.startMotion();
+    else if (!want && this.motion) this.stopMotion('idle');
+    const m = this.motion;
+    if (m && !m.demo && !m.count && !m.warned && Date.now() - m.at > 3000) { m.warned = true; log('motion no readings after 3s'); }
+  },
+  startMotion() {
+    const now = Date.now();
+    if (this.demoShake) {
+      const state = { demo: true, at: now, count: 0, timer: null };
+      const feed = () => {
+        if (this.motion !== state) return;
+        const age = Date.now() - state.at;
+        const c = age % 4000;
+        const dir = DEMO_DIRS[Math.floor(age / 4000) % DEMO_DIRS.length];
+        state.count += 1;
+        this.app.motion(Date.now(), c >= 200 ? demoFlick(dir, c - 200) : DEMO_BASE);
+        state.timer = setTimeout(feed, 33);
+      };
+      this.motion = state;
+      log('motion demo start');
+      feed();
+      return;
+    }
+    if (this.motionFailAt && now - this.motionFailAt < MOTION_RETRY_MS) return;
+    if (typeof AbsoluteOrientationSensor === 'undefined') {
+      log('motion unavailable: AbsoluteOrientationSensor missing');
+      this.motionFailAt = now;
+      return;
+    }
+    let sensor = null;
+    try {
+      sensor = new AbsoluteOrientationSensor({ frequency: MOTION_HZ });
+    } catch (error) {
+      log('motion construct failed', errorText(error));
+      this.motionFailAt = now;
+      return;
+    }
+    const state = { sensor, at: now, count: 0, warned: false };
+    state.onReading = () => {
+      if (this.motion !== state || !this.app) return;
+      const q = sensor.quaternion;
+      const value = q && q.length === 4 ? [q[0], q[1], q[2], q[3]] : null;
+      if (!state.count) log('motion first reading', JSON.stringify(value && value.map(x => Math.round(x * 1000) / 1000)), Date.now() - state.at, 'ms');
+      state.count += 1;
+      this.app.motion(Date.now(), value);
+    };
+    state.onError = event => {
+      log('motion error', errorText(event && (event.error || event)));
+      if (this.motion === state) { this.stopMotion('error'); this.motionFailAt = Date.now(); }
+    };
+    try {
+      sensor.addEventListener('reading', state.onReading);
+      sensor.addEventListener('error', state.onError);
+      sensor.start();
+    } catch (error) {
+      log('motion start failed', errorText(error));
+      this.motionFailAt = now;
+      try { sensor.stop(); } catch (e) { /* ignore */ }
+      return;
+    }
+    this.motion = state;
+    log('motion start', MOTION_HZ);
+  },
+  stopMotion(reason) {
+    const m = this.motion;
+    if (!m) return;
+    this.motion = null;
+    if (m.demo) { if (m.timer !== null) clearTimeout(m.timer); }
+    else {
+      try { m.sensor.removeEventListener('reading', m.onReading); m.sensor.removeEventListener('error', m.onError); } catch (error) { /* ignore */ }
+      try { m.sensor.stop(); } catch (error) { log('motion stop failed', errorText(error)); }
+    }
+    log('motion stop', reason, m.count, 'samples', Math.round((Date.now() - m.at) / 100) / 10, 's');
   },
   loop() {
     if (!this.visible || !this.ready || this.timer !== null || !this.app) return;
@@ -267,6 +366,7 @@ export default {
     let ctx = null;
     try {
       this.app.tick(started);
+      this.syncMotion();
       ctx = wx.createCanvasContext('stage');
       if (ctx) {
         this.app.draw(ctx);

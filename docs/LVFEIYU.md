@@ -138,7 +138,20 @@
 
 渲染只用义眼盯真真机上已画出的 Canvas 能力：rgba、globalAlpha、虚线、clip、路径、弧线、贝塞尔曲线、measureText，以及 `drawImage(缓存Canvas, x, y, w, h)`。`npm run check` 会拒绝 `ctx.scale / rect / ellipse / translate / transform` 和 `lighter` 混合；冒烟测试用白名单假 ctx 走完所有画面。
 
-## 晃一晃：IMU 体感（计划，未实现）
+## 晃一晃：IMU 体感（0.8.0 已接入，真机待验证）
+
+**0.8.0 实现**（2026-11-13，批次 J/K 原画到位后接入）：
+- 识别在 `lib/motion.js`（纯计算，可测试）。只用 `AbsoluteOrientationSensor`：左右取相邻两次姿态的相对旋转在世界竖直轴上的分量，与设备哪根轴朝前无关；上下取设备 +Z 的仰角变化。方向反了改 `yawSign/pitchSign`，阈值见 `SHAKE`。`Accelerometer` 暂未使用。
+- 页面 `pages/home/index.ink` 每帧问 `app.wantsMotion()`（首页、她在场、设置“体感互动”打开），需要时才 `new AbsoluteOrientationSensor({ frequency: 30 })`，离开首页、`onHide`、`onUnload` 立即 `stop()`；构造或启动失败 30 秒后才重试。
+- 日志：`motion start`、`motion first reading`、每 10 秒 `imu stats`（读数次数与最大左右/上下角速度）、`shake detected`、`shake`、`shake ignored <方向> <原因>`、`motion stop <原因> <读数次数>`。
+- 停靠点 4 → 6（新增上中、下中，`CORNERS[4/5]`）；`lib/app.js` 的 `applyShake` 按 3 列 × 2 行网格移动，走出网格就撞墙。6 秒内第 3 次甩 → 晕 3 秒（`dizzy`）→ 生气 2.6 秒（`pout`），期间不响应。停在中间时下次换位优先回角落。
+- 上下甩识别后先等 280 ms：期间系统点头送达就让给点头（呼唤）；正在被甩时收到点头则忽略点头。
+- 绘制在 `lib/scenes.js` 的 `drawShake`：起飞 `shake_lift` → 飞行 `shake_fly` → 翻滚 `shake_tumble_a/b` 及镜像 → 刹车 `shake_brake` → `chase_land`；上甩 `shake_float`，下甩 `chase_jump`；撞墙 `shake_bump` 横向压扁 0.9。残影 2 层、速度线、落地灰尘、撞击线由程序画。
+- 新待机 11 个：挥手、偷吃、得意、瞬移练习（只用旧帧），伸懒腰、吹泡泡（接追泡泡）、钓星星（程序画鱼线、浮漂、钓上的光点）、看书、梳尾巴、打喷嚏、看明信片（有明信片才会出现）。连同原有 6 个共 17 个，随机时避开最近 2 个。
+- 调试参数 `demo=shake`：不读传感器，每 4 秒合成一次甩头姿态，走同一条识别路径，只用于检查画面。
+- 未验证：真机能否构造并读到姿态、阈值与方向符号是否合适、系统点头与上下甩的先后。需要佩戴者在她在家时做轻甩、慢转头、走路、点头四组动作，按 `imu stats` / `shake` 日志调整。
+
+**最初的方案**（保留供对照）：
 
 用户需求（2026-11-13）：首页她自动玩耍时，轻轻上下左右甩头可以把她晃到画面的不同位置；随机待机动作再多一些。美术需求见 `docs/ART-HANDOFF-PENDING.md` 批次 J、K。
 

@@ -9,7 +9,9 @@ import { SPRITES } from '../lib/sprite-data.js';
 import { QBAN } from '../lib/qban-data.js';
 import { capturePhoto, bytesToBase64 } from '../lib/camera.js';
 import { discoverFrame } from '../lib/scenes.js';
-import { DESTS, ITEMS, speechText, cardArtId } from '../lib/content.js';
+import { DESTS, ITEMS, speechText, cardArtId, IDLE_MUTTER } from '../lib/content.js';
+import { createShakeDetector, qAxis, qMul } from '../lib/motion.js';
+import { CORNERS } from '../lib/scenes.js';
 
 const MIN = 60000;
 const T0 = new Date(2026, 10, 12, 9, 0, 0).getTime();
@@ -159,8 +161,8 @@ test('模型回复解析心情标签', () => {
 test('精灵数据尺寸与镜像解码', () => {
   const all = { ...SPRITES, ...QBAN };
   for (const name of Object.keys(all)) assert.equal(Buffer.from(all[name].d, 'base64').length, all[name].w * all[name].h, name);
-  // 用户确认的 80 格 Q 版原画 + 识图指认 8 帧，全部进入解码顺序
-  assert.equal(Object.keys(QBAN).length, 88);
+  // 用户确认的 80 格 Q 版原画 + 识图指认 8 帧 + 0.8.0 批次 J/K 16 格、叉腰生气、信标流量图标，全部进入解码顺序
+  assert.equal(Object.keys(QBAN).length, 106);
   for (const name of Object.keys(QBAN)) assert.ok(SPRITE_ORDER.includes(name), `未使用的帧：${name}`);
   assert.equal(new Set(SPRITE_ORDER).size, SPRITE_ORDER.length, '解码顺序无重复');
   const canvases = [];
@@ -750,4 +752,130 @@ test('纪念品图标与明信片插画：图标进后台解码，明信片按�
     for (const t of [T0, T0 + 500, T0 + 1300, T0 + 4000]) drawPostcardScene(ctx, { dest: dest.id, line, at: T0 }, 36, 36, 408, 184, t, dec.cache);
   });
   assert.ok(stats.drawImage >= 18);
+});
+
+// ---------------------------------------------------------------- 晃一晃（0.8.0）
+const BASE_Q = qAxis([1, 0, 0], -90);   // 设备 +Z 朝前、水平
+function flickQ(dir, ms, amp = 15, go = 110, back = 170) {
+  const k = ms < 0 ? 0 : ms < go ? ms / go : ms < go + back ? 1 - (ms - go) / back : 0;
+  const a = amp * k;
+  const yaw = dir === 'left' ? a : dir === 'right' ? -a : 0;
+  const pitch = dir === 'up' ? a : dir === 'down' ? -a : 0;
+  return qMul(qAxis([1, 0, 0], pitch), qMul(qAxis([0, 0, 1], yaw), BASE_Q));
+}
+
+test('甩头识别：四个方向的轻甩触发，慢转头、转头停住、大幅转头、走路颠簸不触发', () => {
+  const run = (fn, ms = 1500) => {
+    const d = createShakeDetector();
+    const out = [];
+    for (let t = 0; t <= ms; t += 33) { const e = d.feed(T0 + t, fn(t)); if (e) out.push(e.dir); }
+    return out;
+  };
+  for (const dir of ['left', 'right', 'up', 'down']) assert.deepEqual(run(t => flickQ(dir, t - 200)), [dir], dir);
+  const yawQ = deg => qMul(qAxis([0, 0, 1], deg), BASE_Q);
+  assert.deepEqual(run(t => yawQ(Math.min(30, t / 40))), [], '慢慢转头');
+  assert.deepEqual(run(t => yawQ(t < 200 ? 0 : Math.min(25, (t - 200) / 6))), [], '转过去停住');
+  assert.deepEqual(run(t => flickQ('left', t - 200, 70, 300, 400)), [], '大幅转头');
+  assert.deepEqual(run(t => qMul(qAxis([1, 0, 0], 3 * Math.sin(t / 1000 * 4 * Math.PI)), BASE_Q), 3000), [], '走路颠簸');
+  // 冷却：紧接着的第二次甩不触发
+  assert.deepEqual(run(t => flickQ('left', t < 600 ? t - 200 : t - 700)), ['left']);
+  assert.equal(run(() => [0, 0, 0, 0]).length, 0, '无效四元数被忽略');
+});
+
+function homeHarness(store) {
+  const h = harness({ store });
+  h.run(800);
+  h.app.view.title.focus = 0;
+  h.app.confirm();
+  h.run(7400);
+  assert.equal(h.app.view.screen, 'home');
+  h.run(2000);
+  const pet = h.app.view.pet;
+  // 停在待机、没有传送
+  pet.tp = null; pet.act = 'idle'; pet.actUntil = h.app.view.now + 600000;
+  h.flick = dir => {
+    for (let t = 0; t < 600; t += 33) { h.step(33); h.app.motion(h.app.view.now, flickQ(dir, t - 100)); }
+  };
+  return h;
+}
+
+test('晃一晃：甩向相邻停靠点，边上撞墙弹回，连甩三次会晕再生气，期间不响应', () => {
+  const h = homeHarness();
+  const { app, run } = h;
+  const v = app.view;
+  assert.equal(app.wantsMotion(), true);
+  v.pet.corner = 3;   // 右下
+  h.flick('left');
+  assert.equal(v.pet.tp && v.pet.tp.kind, 'shake');
+  assert.deepEqual([v.pet.tp.dir, v.pet.tp.to, v.pet.tp.bump], ['left', 5, false]);
+  run(1200);
+  assert.equal(v.pet.corner, 5, '到了下中');
+  assert.equal(v.pet.tp, null);
+  h.flick('up');
+  run(400);   // 上下甩先等系统点头一会儿
+  assert.equal(v.pet.tp.to, 4, '到了上中');
+  run(1200);
+  assert.equal(v.pet.corner, 4);
+  h.flick('up');
+  run(400);
+  assert.ok(v.pet.tp.bump, '最上面再往上：撞墙');
+  assert.equal(v.pet.tp.to, 4);
+  assert.ok(v.pet.dizzyNext, '6 秒内第三次');
+  run(1200);
+  assert.equal(v.pet.act, 'dizzy');
+  h.flick('left');
+  assert.equal(v.pet.tp, null, '晕的时候甩不动');
+  run(3200);
+  assert.equal(v.pet.act, 'pout');
+  run(3000);
+  assert.notEqual(v.pet.act, 'pout');
+  assert.ok(CORNERS[v.pet.corner]);
+  for (const w of [IDLE_MUTTER.shake, IDLE_MUTTER.bump, IDLE_MUTTER.dizzy, IDLE_MUTTER.pout]) assert.ok(w.length);
+});
+
+test('晃一晃：系统点头送达时上下甩让给点头；离开首页或关闭设置后不要传感器', () => {
+  const h = homeHarness();
+  const { app, run } = h;
+  const v = app.view;
+  v.pet.corner = 0;
+  for (let t = 0; t < 330; t += 33) { h.step(33); app.motion(v.now, flickQ('down', t - 60)); }
+  assert.ok(v.imu.pendingV, '识别到下甩，等待中');
+  app.nod();
+  run(400);
+  assert.ok(!v.pet.tp || v.pet.tp.kind !== 'shake', '点头优先');
+  run(1500);
+  assert.equal(v.screen, 'close', '点头呼唤照常');
+  assert.equal(app.wantsMotion(), false, '近景不需要传感器');
+  app.back();
+  run(1500);
+  assert.equal(v.screen, 'home');
+  v.g.settings.motion = false;
+  assert.equal(app.wantsMotion(), false);
+  assert.equal(Game.normalize(JSON.parse(JSON.stringify(v.g)), T0).settings.motion, false, '关闭会保存');
+  assert.equal(Game.normalize({}, T0).settings.motion, true, '默认打开');
+});
+
+test('首页新待机：每个动作和每种甩法都能在 6 个停靠点绘制', () => {
+  const h = homeHarness();
+  const { app, step, stats } = h;
+  const v = app.view;
+  v.g.postcards.push({ dest: DESTS[0].id, line: 0, at: T0 });
+  const acts = ['wave', 'snack', 'proud', 'oops', 'stretch', 'bubble', 'fish', 'read', 'comb', 'sneeze', 'postcard', 'dizzy', 'pout'];
+  for (let corner = 0; corner < CORNERS.length; corner += 1) {
+    for (const act of acts) {
+      v.pet.corner = corner; v.pet.tp = null; v.pet.act = act; v.pet.actAt = v.now; v.pet.actUntil = v.now + 600000;
+      for (let i = 0; i < 40; i += 1) step(160);
+    }
+    for (const dir of ['left', 'right', 'up', 'down']) {
+      v.pet.tp = { kind: 'shake', from: corner, to: corner, dir, bump: true, at: v.now };
+      for (let i = 0; i < 30; i += 1) step(40);
+      v.pet.tp = { kind: 'shake', from: corner, to: (corner + 1) % CORNERS.length, dir, bump: false, at: v.now };
+      for (let i = 0; i < 30; i += 1) step(40);
+    }
+  }
+  assert.ok(stats.drawImage > 1000);
+  // 随机池：17 种待机都可能出现（postcard 需要有明信片）
+  const seen = new Set();
+  for (let i = 0; i < 400; i += 1) { v.pet.actUntil = v.now; v.pet.actsHere = 0; v.pet.tp = null; v.pet.corner = 0; step(40); seen.add(v.pet.act); }
+  for (const act of ['idle', 'gaze', 'play', 'doze', 'hum', 'stroll', ...acts.slice(0, 11)]) assert.ok(seen.has(act), act);
 });
