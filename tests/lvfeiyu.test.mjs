@@ -249,7 +249,7 @@ function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', visio
   let clock = T0;
   const timers = [];
   class FakeCanvas { constructor(w, h) { this.w = w; this.h = h; } getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {}, flush() {} }; } }
-  const h = { listenHandlers: null, spoken: [], speaking: false, listenWhileSpeaking: 0, store, systems: [] };
+  const h = { listenHandlers: null, spoken: [], speaking: false, listenWhileSpeaking: 0, store, systems: [], prompts: [] };
   const app = createApp({
     now: () => clock,
     storage: { get: k => store.get(k), set: (k, v) => store.set(k, v) },
@@ -264,7 +264,7 @@ function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', visio
       h.listenHandlers = handlers;
       return { stop() { handlers.onEnd('你好呀'); }, abort() { h.listenHandlers = null; } };
     },
-    chat: { create: async system => { h.systems.push(system); return {}; }, prompt: async () => voiceReply, destroy() {} },
+    chat: { create: async system => { h.systems.push(system); return {}; }, prompt: async (session, text) => { h.prompts.push(text); return voiceReply; }, destroy() {} },
     vision,
     speech: { speak(text) { h.spoken.push(text); h.speaking = true; }, stop() { h.speaking = false; } }
   });
@@ -559,6 +559,39 @@ test('看看：按键内同步开始拍照，带图提问后播放指认动画�
   assert.equal(h.app.view.close.phase, 'discover', '指认姿势一直保持，不自动回到半身');
   h.app.back();
   assert.equal(h.app.view.close.phase, 'idle', '双击先结束指认');
+});
+
+test('看看与聊天共享当次上下文：看到的东西进聊天，聊过的话进识图', async () => {
+  const f = fakeVision();
+  const h = harness({ vision: f.vision });
+  await toClose(h);
+  const talk = async text => {
+    h.app.view.dockFocus = h.app.view.dock.findIndex(d => d.id === 'talk');
+    h.app.confirm();
+    h.run(200);
+    h.listenHandlers.onEnd(text);
+    await flush(); await flush();
+    h.run(400);
+  };
+  await talk('我在找奶茶');
+  assert.equal(h.prompts.length, 1);
+  assert.ok(!h.prompts[0].includes('系统备注'), '刚建会话时状态在系统提示里，不重复');
+  h.app.view.dockFocus = h.app.view.dock.findIndex(d => d.id === 'look');
+  h.app.confirm();
+  f.shutter();
+  await flush(); await flush(); await flush();
+  h.run(200);
+  assert.ok(f.log.prompts[0].system.includes('我在找奶茶'), '识图提示带上刚才聊的话');
+  h.app.back();
+  await talk('它是什么颜色');
+  const told = h.prompts.at(-1);
+  assert.ok(told.includes('系统备注') && told.includes('杯子') && told.endsWith('它是什么颜色'), '看到的东西作为备注附在这句话前');
+  await talk('好吧');
+  assert.ok(!h.prompts.at(-1).includes('杯子'), '同一次看看只告诉一次');
+  assert.equal(h.systems.length, 1, '一直是同一个聊天会话');
+  h.app.view.g.affinity += 500;
+  await talk('我们关系怎么样');
+  assert.ok(h.prompts.at(-1).includes('游戏状态更新'), '状态变了就附上最新状态');
 });
 
 test('看看：返回键取消拍照，相机失败给出提示，不调用模型', async () => {
