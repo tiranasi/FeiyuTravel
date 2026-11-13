@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Game from '../lib/game.js';
 import { createApp, parseReply } from '../lib/app.js';
-import { createDecoder, SPRITE_ORDER, REQUIRED, ALIAS, CARD_NAMES } from '../lib/sprites.js';
+import { createDecoder, SPRITE_ORDER, REQUIRED, ALIAS, CARD_NAMES, CARD_SLOTS, STRIP_BANDS, SHEET } from '../lib/sprites.js';
 import { drawPostcardScene } from '../lib/postcards.js';
 import { SPRITES } from '../lib/sprite-data.js';
 import { QBAN } from '../lib/qban-data.js';
@@ -165,10 +165,17 @@ test('精灵数据尺寸与镜像解码', () => {
   assert.equal(Object.keys(QBAN).length, 106);
   for (const name of Object.keys(QBAN)) assert.ok(SPRITE_ORDER.includes(name), `未使用的帧：${name}`);
   assert.equal(new Set(SPRITE_ORDER).size, SPRITE_ORDER.length, '解码顺序无重复');
-  const canvases = [];
+  // 带像素存储的假 Canvas：putImageData(image, x, y) 写进对应位置
   class FakeCanvas {
-    constructor(w, h) { this.w = w; this.h = h; canvases.push(this); }
-    getContext() { const self = this; return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData(image) { self.data = image.data; }, flush() {} }; }
+    constructor(w, h) { this.w = w; this.h = h; this.data = new Uint8ClampedArray(w * h * 4); }
+    getContext() {
+      const self = this;
+      return {
+        createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
+        putImageData(image, x, y) { for (let r = 0; r < image.height; r += 1) self.data.set(image.data.subarray(r * image.width * 4, (r + 1) * image.width * 4), ((y + r) * self.w + x) * 4); },
+        flush() {}
+      };
+    }
   }
   const decoder = createDecoder(FakeCanvas, value => Buffer.from(value, 'base64').toString('latin1'));
   let steps = 0;
@@ -179,11 +186,34 @@ test('精灵数据尺寸与镜像解码', () => {
   while (!decoder.step()) steps += 1;
   assert.equal(Object.keys(decoder.cache).length, SPRITE_ORDER.length + Object.keys(ALIAS).length + 1);
   assert.ok(steps > 8, '分块解码');
-  const side = decoder.cache.side.canvas.data;
-  const mirror = decoder.cache.sideL.canvas.data;
+  const a = decoder.cache.side;
+  const b = decoder.cache.sideL;
+  const px = (e, x, y) => e.canvas.data[((e.sy + y) * e.canvas.w + e.sx + x) * 4 + 3];
   const w = QBAN.body_side.w;
-  const y = 60;
-  for (let x = 0; x < w; x += 7) assert.equal(side[(y * w + x) * 4 + 3], mirror[(y * w + (w - 1 - x)) * 4 + 3]);
+  let lit = 0;
+  for (let x = 0; x < w; x += 7) { assert.equal(px(a, x, 60), px(b, w - 1 - x, 60)); if (px(a, x, 60)) lit += 1; }
+  assert.ok(lit > 3, '取样处有亮像素');
+  // 小图块：Canvas 数远少于帧数（真机每个 Canvas 约 1.2 MB 原生内存），
+  // 每块面积有上限（真机 drawImage 的耗时按源 Canvas 整块面积计），子图互不重叠
+  assert.ok(decoder.canvases.length <= 60, `图块数 ${decoder.canvases.length}`);
+  for (const c of decoder.canvases) {
+    const big = SPRITE_ORDER.some(n => { const e = decoder.cache[n]; return e.canvas === c && (e.w > SHEET || e.h > SHEET); });
+    if (!big) assert.ok(c.w <= SHEET && c.h <= SHEET, `图块 ${c.w}×${c.h}`);
+  }
+  const boxes = Object.values(decoder.cache).filter((e, i, all) => all.indexOf(e) === i);
+  for (const e of boxes) assert.ok(e.sx >= 0 && e.sy >= 0 && e.sx + e.w <= e.canvas.w && e.sy + e.h <= e.canvas.h, e.name);
+  for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) {
+    const p = boxes[i];
+    const q = boxes[j];
+    if (p.canvas === q.canvas) assert.ok(p.sx + p.w <= q.sx || q.sx + q.w <= p.sx || p.sy + p.h <= q.sy || q.sy + q.h <= p.sy, `${p.name} 与 ${q.name} 重叠`);
+  }
+  // 通话横条只是压暗副本里的行范围，不再一条一个 Canvas
+  const before = decoder.canvases.length;
+  const bands = decoder.cache.bust_neutral.makeStrips();
+  assert.equal(bands.length, STRIP_BANDS);
+  assert.ok(decoder.canvases.length - before <= 1, '一帧压暗副本至多新开一个通话图块');
+  assert.ok(bands.every(band => band.src.canvas.w <= SHEET && band.src.canvas.h <= SHEET));
+  assert.ok(px(bands[0].src, 40, 0) <= px(decoder.cache.bust_neutral, 40, 0), '每 3 行压暗一行');
 });
 
 // 只允许真机已验证的方法；出现其他方法即失败。
@@ -746,8 +776,14 @@ test('纪念品图标与明信片插画：图标进后台解码，明信片按�
   // 有插画时画插画并叠动效，所有卡的动效都只用白名单方法
   const stats = {};
   const ctx = fakeCtx(stats);
+  // 明信片只占固定槽位：一口气想要全部 18 张，只解最近想要的几张，常驻不超过槽位数
   for (const name of CARD_NAMES) { dec.want(name); }
   while (!dec.step());
+  const resident = CARD_NAMES.filter(name => dec.cache[name]);
+  assert.ok(resident.length <= CARD_SLOTS, `常驻明信片 ${resident.length}`);
+  for (const name of CARD_NAMES.slice(-3)) assert.ok(dec.cache[name], `最近想要的 ${name} 已解码`);
+  // 逐张翻：每张都能解出来
+  for (const name of CARD_NAMES) { dec.want(name); while (!dec.step()); assert.ok(dec.cache[name], name); }
   for (const dest of DESTS) dest.lines.forEach((line, i) => {
     for (const t of [T0, T0 + 500, T0 + 1300, T0 + 4000]) drawPostcardScene(ctx, { dest: dest.id, line, at: T0 }, 36, 36, 408, 184, t, dec.cache);
   });
