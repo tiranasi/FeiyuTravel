@@ -88,6 +88,30 @@
 
 渲染只用义眼盯真真机上已画出的 Canvas 能力：rgba、globalAlpha、虚线、clip、路径、弧线、贝塞尔曲线、measureText，以及 `drawImage(缓存Canvas, x, y, w, h)`。`npm run check` 会拒绝 `ctx.scale / rect / ellipse / translate / transform` 和 `lighter` 混合；冒烟测试用白名单假 ctx 走完所有画面。
 
+## 0.5.0 真机验证（RG_glasses 1906092618121455，2026-11-13）
+
+安装结果 `updated`，旧存档保留（旅行中的霓虹夜市行程正常归来并补弹礼物）。“看看”由佩戴者亲手操作三次。
+
+**截图确认已渲染**（`build/device/`，未提交）：
+- 主页旅行中的远程信标与浮光贝图标
+- 礼物领取提示、图鉴
+- “看看”的发现画面：指向帧、“我看到的”气泡、底栏焦点在“看看”
+
+**日志确认已执行**（第一次）：
+- `look stage stream → warmup → shutter`：预热 2500ms 后快门
+- `photo via ImageCapture`：jpeg 约 29 万字节；从按下到拍到约 3.5–4.1 秒
+- `shrink`：28 万字节压到 9.4 万字节，720×1280；data URL 约 12–14 万字符
+- `look model`：约 3.4 秒；回复带心情标签，例如“[开心] 是只藏在绿植里的橙色小狐狸！……”，之后 `tts play`
+- 拍完后系统日志有一条 `Camera3-OutputStream ... Connection timed out`，随后相机正常断开并回到 `Camera Available`。它出现在照片已取得之后，是停流时的输出，后续两次拍照都没有受影响。
+- 帧耗时平均 7–8ms
+
+**尚未验证**：
+- 取景框和扫描线在镜片上的观感（没有截到取景阶段）
+- 拍照中途双击取消、没有相机权限、离线
+- 识别的准确度：模型回复与实物是否一致，需要佩戴者判断
+
+**光学观感**：等佩戴者反馈。
+
 ## 0.4.0 真机验证（RG_glasses 1906092618121455，2026-11-12）
 
 **截图确认已渲染**：
