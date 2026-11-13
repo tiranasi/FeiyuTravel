@@ -273,6 +273,25 @@ test('首页：新档默认停在教程，返回键交给宿主退出', () => {
   assert.equal(h.app.back(), false, '再双击才退出');
 });
 
+test('图鉴：轻点打开纪念品详情，滑动切换，双击先关详情', () => {
+  const h = harness();
+  h.run(800);
+  const v = h.app.view;
+  v.g.souvenirs.lantern = 2;
+  v.screen = 'menu';
+  v.menu = { kind: 'dex', focus: 0, detail: null };
+  h.app.confirm();
+  assert.ok(v.menu.detail, '详情打开');
+  h.run(300);
+  h.app.swipe(1);
+  assert.equal(v.menu.focus, 1);
+  assert.ok(v.menu.detail, '滑动后仍在详情');
+  h.run(300);
+  assert.equal(h.app.back(), true);
+  assert.equal(v.menu.detail, null);
+  assert.equal(v.screen, 'menu', '双击先关详情，仍在图鉴');
+});
+
 test('快速旅行：开启后新旅行时长为 1/3，存档保留开关', () => {
   const base = Game.normalize({}, T0);
   base.pack.food = 'onigiri';
