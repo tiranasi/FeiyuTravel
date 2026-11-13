@@ -21,7 +21,7 @@
 - 纪念品图标与明信片插画（0.7.0）：由 `tools-art/souvenir.py` 生成 `lib/gift-data.js` 和 `lib/card-data.js`，不要手改。明信片插画按需 `decoder.want()` 解码，动效在 `lib/postcards.js` 的 `FX`（按画框比例定位），新增明信片要同时加文案、插画和动效。
 - 图鉴详情（0.6.2）：`v.menu.detail` 非空时显示详情；物品图读 `v.cache['gift_' + id]`，缺图画占位。待接入的纪念品图标与明信片插画见 `docs/ART-HANDOFF-SOUVENIR-POSTCARD.md` 第 7 节。
 - 首页设置弹窗（0.6.1）：`v.title.panel` 非空时滑动/轻点/双击都只作用于弹窗；开关项在 `content.js` 的 `SETTINGS`，值存在 `g.settings`。快速旅行在 `Game.startTrip` 里把时长除以 `FAST_TRAVEL`。
-- 旅行通话（0.6.0）：她在外地时主页“呼唤”变“通话”，画面走 close 屏但 `v.close.call` 非空，底栏 `DOCK_CALL`（说话/看看/挂断），每次旅行 `CALLS_PER_TRIP` 次。全息波动参数在 `lib/draw.js` 的 `HOLO`，横带由 `lib/sprites.js` 预切（`STRIP_BANDS`），不要改回逐带 clip 重画（真机太慢）。
+- 旅行通话（0.6.0）：她在外地时主页“呼唤”变“通话”，画面走 close 屏但 `v.close.call` 非空，底栏 `DOCK_CALL`（说话/看看/挂断），每次旅行 `CALLS_PER_TRIP` 次免费，之后每次消耗一个信标流量（0.7.3，`Game.useCall`；商店用 `SHOP_ORDER`，行囊仍用 `ITEM_ORDER`）。占位美术统一登记在 `docs/ART-HANDOFF-PENDING.md`。全息波动参数在 `lib/draw.js` 的 `HOLO`，横带由 `lib/sprites.js` 预切（`STRIP_BANDS`），不要改回逐带 clip 重画（真机太慢）。
 - 共享代码 `lib/app.js`、`game.js`、`content.js`、`scenes.js`、`title.js`、`draw.js`、`postcards.js`、`sprites.js`、`camera.js` 不依赖 DOM 或 localStorage，宿主能力（存储、聆听、模型、朗读）通过 `createApp(host)` 注入。新增 lib 文件要同时加进 `scripts/aix.mjs` 的 LIB 列表。
 - 0.4.0 新增游戏首页与互动教程，TTS 用 `host.speech`。开始聆听前必须停播；主页自言自语不出声；不做常驻聆听（用户已明确不要）。系统唤醒词无法修改。
 - 画精灵一律用 `draw.js` 的 `blit()`，不要直接 `ctx.drawImage`：真机上 drawImage 会乘上当前 fillStyle 的透明度（0.7.1 实测），blit 先把 fillStyle 设成不透明黑。

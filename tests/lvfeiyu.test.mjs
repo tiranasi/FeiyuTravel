@@ -648,8 +648,43 @@ test('旅行通话：拨号后全息出现，可聊天和看看，挂断后她�
   v.dockFocus = 0;
   h.app.confirm();
   assert.equal(v.screen, 'home', '次数用完不再接通');
-  assert.ok(v.toast.text.includes('能量用完'));
+  assert.ok(v.toast.text.includes('信标流量'), '提示去商店买信标流量');
   assert.ok(Object.values(v.cache).some(e => e.strips && e.strips.length === 10), '通话用到的帧已切成全息横条');
+  // 信标流量：免费次数用完后每次通话消耗一个
+  v.g.stock.beacon = 1;
+  h.run(400);
+  v.dockFocus = 0;
+  h.app.confirm();
+  assert.equal(v.screen, 'close', '用信标流量接通');
+  assert.equal(v.g.stock.beacon, 0);
+  assert.equal(v.g.trip.calls, 3, '免费次数不再增加');
+  h.run(2200);
+  h.app.back();
+  h.run(800);
+  v.dockFocus = 0;
+  h.app.confirm();
+  assert.equal(v.screen, 'home', '信标流量也用完后不再接通');
+});
+
+test('商店：信标流量可购买，不能放进行囊，存档保留', () => {
+  const s = Game.normalize({}, T0);
+  s.scales = 100;
+  assert.equal(Game.buy(s, 'beacon').ok, true);
+  assert.equal(s.stock.beacon, 1);
+  assert.equal(s.scales, 40);
+  assert.equal(Game.togglePack(s, 'beacon', T0, Game.makeRng(1)).ok, false, '不进行囊');
+  assert.equal(Game.normalize(JSON.parse(JSON.stringify(s)), T0).stock.beacon, 1);
+  assert.equal(Game.useCall(s).reason, 'home', '在家不能通话');
+  const h = harness();
+  h.run(800);
+  const v = h.app.view;
+  v.screen = 'menu';
+  v.menu = { kind: 'shop', focus: 0, detail: null };
+  for (let i = 0; i < 5; i += 1) h.app.swipe(1);
+  v.g.scales = 60;
+  h.app.confirm();
+  assert.equal(v.g.stock.beacon, 1, '商店第 6 项是信标流量');
+  h.run(300);
 });
 
 test('旅行通话：通话中她到家会挂断并现身，超时信号飘走', async () => {
