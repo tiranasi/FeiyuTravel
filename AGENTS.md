@@ -18,6 +18,7 @@
 - 互动中的角色样貌必须来自用户确认的绿色 Q 版原画（qban-v2）。载入页的成年托腮全息像只用于载入动画。
 - 精灵由 `tools-art/qban.py`（Q 版，`lib/qban-data.js`）和 `tools-art/convert.py`（全息像，`lib/sprite-data.js`）生成，不要手改。新增帧要加进 `lib/sprites.js` 的 `REQUIRED` 或 `LATER`。
 - “看看”识图：相机实现移植自一眼顶真（`lib/camera.js`），只用无参数 `takePhoto()`，在按键回调里同步发起；视觉模型每次新建会话、用完销毁。
+- 首页设置弹窗（0.6.1）：`v.title.panel` 非空时滑动/轻点/双击都只作用于弹窗；开关项在 `content.js` 的 `SETTINGS`，值存在 `g.settings`。快速旅行在 `Game.startTrip` 里把时长除以 `FAST_TRAVEL`。
 - 旅行通话（0.6.0）：她在外地时主页“呼唤”变“通话”，画面走 close 屏但 `v.close.call` 非空，底栏 `DOCK_CALL`（说话/看看/挂断），每次旅行 `CALLS_PER_TRIP` 次。全息波动参数在 `lib/draw.js` 的 `HOLO`，横带由 `lib/sprites.js` 预切（`STRIP_BANDS`），不要改回逐带 clip 重画（真机太慢）。
 - 共享代码 `lib/app.js`、`game.js`、`content.js`、`scenes.js`、`title.js`、`draw.js`、`postcards.js`、`sprites.js`、`camera.js` 不依赖 DOM 或 localStorage，宿主能力（存储、聆听、模型、朗读）通过 `createApp(host)` 注入。新增 lib 文件要同时加进 `scripts/aix.mjs` 的 LIB 列表。
 - 0.4.0 新增游戏首页与互动教程，TTS 用 `host.speech`。开始聆听前必须停播；主页自言自语不出声；不做常驻聆听（用户已明确不要）。系统唤醒词无法修改。

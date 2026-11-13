@@ -255,11 +255,37 @@ test('首页：新档默认停在教程，返回键交给宿主退出', () => {
   assert.equal(h.app.back(), false);
   h.app.swipe(1);
   h.app.confirm();
+  assert.ok(h.app.view.title.panel, '设置弹窗打开');
+  h.app.confirm();
   h.run(200);
   assert.equal(h.app.view.g.settings.voice, false, '语音开关');
   assert.equal(h.spoken.length, 0, '关闭语音后不朗读');
   h.app.confirm();
   assert.equal(h.app.view.g.settings.voice, true);
+  h.app.swipe(1);
+  h.app.confirm();
+  assert.equal(h.app.view.g.settings.fast, true, '快速旅行开关');
+  h.run(200);
+  assert.equal(h.app.back(), true, '双击先关弹窗');
+  h.run(400);
+  assert.equal(h.app.view.title.panel, null);
+  assert.equal(h.app.view.screen, 'title');
+  assert.equal(h.app.back(), false, '再双击才退出');
+});
+
+test('快速旅行：开启后新旅行时长为 1/3，存档保留开关', () => {
+  const base = Game.normalize({}, T0);
+  base.pack.food = 'onigiri';
+  const slow = Game.normalize(JSON.parse(JSON.stringify(base)), T0);
+  const quick = Game.normalize(JSON.parse(JSON.stringify(base)), T0);
+  quick.settings.fast = true;
+  slow.pack.food = 'onigiri';
+  quick.pack.food = 'onigiri';
+  Game.startTrip(slow, T0, Game.makeRng(7));
+  Game.startTrip(quick, T0, Game.makeRng(7));
+  assert.ok(Math.abs((quick.trip.returnAt - T0) * 3 - (slow.trip.returnAt - T0)) < 2);
+  assert.equal(Game.normalize(JSON.parse(JSON.stringify(quick)), T0).settings.fast, true);
+  assert.equal(Game.normalize({}, T0).settings.fast, false);
 });
 
 test('教程：每步需要真实操作，完成后记录并进入载入动画', () => {
