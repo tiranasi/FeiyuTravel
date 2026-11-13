@@ -3,12 +3,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Game from '../lib/game.js';
 import { createApp, parseReply } from '../lib/app.js';
-import { createDecoder, SPRITE_ORDER, REQUIRED, ALIAS } from '../lib/sprites.js';
+import { createDecoder, SPRITE_ORDER, REQUIRED, ALIAS, CARD_NAMES } from '../lib/sprites.js';
+import { drawPostcardScene } from '../lib/postcards.js';
 import { SPRITES } from '../lib/sprite-data.js';
 import { QBAN } from '../lib/qban-data.js';
 import { capturePhoto, bytesToBase64 } from '../lib/camera.js';
 import { discoverFrame } from '../lib/scenes.js';
-import { DESTS, ITEMS, speechText } from '../lib/content.js';
+import { DESTS, ITEMS, speechText, cardArtId } from '../lib/content.js';
 
 const MIN = 60000;
 const T0 = new Date(2026, 10, 12, 9, 0, 0).getTime();
@@ -675,4 +676,32 @@ test('教程所有步骤可绘制', () => {
     h.run(4000, 80);
   }
   assert.ok(h.screens.has('tutorial'));
+});
+
+test('纪念品图标与明信片插画：图标进后台解码，明信片按需 4 位解码，文案对应插画', () => {
+  for (const dest of DESTS) for (const gift of dest.gifts) assert.ok(SPRITE_ORDER.includes('gift_' + gift.id), gift.id);
+  assert.equal(CARD_NAMES.length, 18);
+  for (const dest of DESTS) dest.lines.forEach((line, i) => assert.equal(cardArtId({ dest: dest.id, line }), `card_${dest.id}_${i + 1}`));
+  assert.equal(cardArtId({ dest: 'harbor', line: '码头的风好大，帽子差点飞了。' }), 'card_harbor_2', '旧文案');
+  assert.equal(cardArtId({ dest: 'moon', line: '不存在的话' }), null);
+  class FakeCanvas { constructor(w, h) { this.w = w; this.h = h; } getContext() { const c = this; return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData(img) { c.img = img; }, flush() {} }; } }
+  const dec = createDecoder(FakeCanvas, value => Buffer.from(value, 'base64').toString('latin1'));
+  while (!dec.step());
+  assert.ok(dec.cache.gift_lantern, '图标已解码');
+  assert.equal(dec.cache.card_moon_3, undefined, '明信片默认不解码');
+  dec.want('card_moon_3');
+  assert.equal(dec.finished, false);
+  while (!dec.step());
+  const art = dec.cache.card_moon_3;
+  assert.equal(art.w, 408);
+  assert.ok(art.canvas.img.data.some((value, i) => i % 4 === 3 && value > 200), '有亮像素');
+  // 有插画时画插画并叠动效，所有卡的动效都只用白名单方法
+  const stats = {};
+  const ctx = fakeCtx(stats);
+  for (const name of CARD_NAMES) { dec.want(name); }
+  while (!dec.step());
+  for (const dest of DESTS) dest.lines.forEach((line, i) => {
+    for (const t of [T0, T0 + 500, T0 + 1300, T0 + 4000]) drawPostcardScene(ctx, { dest: dest.id, line, at: T0 }, 36, 36, 408, 184, t, dec.cache);
+  });
+  assert.ok(stats.drawImage >= 18);
 });
