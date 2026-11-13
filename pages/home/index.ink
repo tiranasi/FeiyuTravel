@@ -8,6 +8,7 @@
       "properties": {
         "debug": { "type": "string", "enum": ["fast"], "description": "调试：fast=时间加速120倍" },
         "reset": { "type": "string", "enum": ["1"], "description": "调试：清空存档重新开始" },
+        "recall": { "type": "string", "enum": ["1"], "description": "调试：正在旅行的她立即回家（只改这趟旅程的归来时间）" },
         "demo": { "type": "string", "enum": ["shake"], "description": "调试：shake=不读传感器，每4秒合成一次甩头姿态序列（只用于检查画面）" }
       }
     }
@@ -252,6 +253,7 @@ export default {
       decoder,
       log,
       timeScale: query.debug === 'fast' ? 120 : 1,
+      recall: query.recall === '1',
       setTimeout: (fn, ms) => setTimeout(fn, ms),
       clearTimeout: id => clearTimeout(id),
       listen,
