@@ -893,7 +893,7 @@ test('明信片列表：进入和移动焦点就预先解码当前与前后各�
 });
 
 // ---------------------------------------------------------------- 晃一晃（0.8.0）
-const BASE_Q = qAxis([1, 0, 0], -90);   // 设备 +Z 朝前、水平
+const BASE_Q = qAxis([1, 0, 0], 90);   // 设备 -Z 朝前、水平（0.8.17 真机核对）
 function flickQ(dir, ms, amp = 15, go = 110, back = 170) {
   const k = ms < 0 ? 0 : ms < go ? ms / go : ms < go + back ? 1 - (ms - go) / back : 0;
   const a = amp * k;
@@ -1075,6 +1075,22 @@ test('甩头识别 0.8.16：又大又快的点头（≥10°、0.3 秒内）不�
   assert.deepEqual(run(t => -Math.min(30, Math.max(0, t - 1000) / 167), 7000).out, []);
   // 走路上下晃 ±10°、2 Hz，30 Hz 和 57 Hz 都不误触
   for (const step of [17, 33]) assert.deepEqual(run(t => 10 * Math.sin(t / 1000 * 4 * Math.PI), 6000, step).out, []);
+});
+
+test('甩头识别 0.8.17：眼镜 +Z 朝向佩戴者——+Z 往上翻（低头）算向下（真机 0.8.16 与系统点头事件对照）', () => {
+  // 只用设备坐标描述：水平时 -Z 指北；低头时 -Z 朝下、+Z 朝上
+  const level = qAxis([1, 0, 0], 90);
+  const dz = q => { const v = [0, 0, -1]; const [x, y, z, w] = q; const t = [2 * (y * v[2] - z * v[1]), 2 * (z * v[0] - x * v[2]), 2 * (x * v[1] - y * v[0])]; return v[2] + w * t[2] + (x * t[1] - y * t[0]); };
+  assert.ok(Math.abs(dz(level)) < 1e-9, '水平时 -Z 不朝上下');
+  const d = createShakeDetector();
+  const out = [];
+  for (let t = 0; t <= 2000; t += 33) {
+    const deg = t < 1000 ? 0 : -Math.min(20, (t - 1000) / 5);   // 0.1 秒低头 20°
+    const q = qMul(qAxis([1, 0, 0], deg), level);
+    if (t === 2000) assert.ok(dz(q) < -0.3, '低头后 -Z 朝下');
+    const e = d.feed(T0 + t, q); if (e) out.push(e.dir);
+  }
+  assert.deepEqual(out, ['down']);
 });
 
 function homeHarness(store, log) {

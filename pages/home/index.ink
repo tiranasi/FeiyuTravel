@@ -28,7 +28,7 @@ import { qAxis, qMul } from '../../lib/motion.js';
 const MOTION_HZ = 30;
 const MOTION_RETRY_MS = 30000;
 // 调试 demo=shake：合成“基准姿态 + 一次轻甩”的四元数，走与真传感器相同的识别路径
-const DEMO_BASE = qAxis([1, 0, 0], -90);
+const DEMO_BASE = qAxis([1, 0, 0], 90);   // 设备 -Z 朝前、水平
 const DEMO_DIRS = ['left', 'right', 'right', 'right', 'up', 'down', 'down', 'left', 'left'];
 function demoFlick(dir, ms) {
   const amp = 15;
