@@ -909,7 +909,7 @@ test('甩头识别：甩够就触发、不要求回正，回正不算反向；�
     for (let t = 0; t <= ms; t += 33) { const e = d.feed(T0 + t, fn(t)); if (e) out.push(e.dir); }
     return out;
   };
-  for (const dir of ['left', 'right', 'up', 'down']) assert.deepEqual(run(t => flickQ(dir, t - 200)), [dir], dir);
+  for (const dir of ['left', 'right', 'up', 'down']) assert.deepEqual(run(t => flickQ(dir, t - 700)), [dir], dir);
   const yawQ = deg => qMul(qAxis([0, 0, 1], deg), BASE_Q);
   assert.deepEqual(run(t => yawQ(Math.min(30, t / 40))), [], '慢慢转头');
   assert.deepEqual(run(t => yawQ(t < 200 ? 0 : Math.min(25, (t - 200) / 6))), ['left'], '甩过去停住也算');
@@ -921,9 +921,9 @@ test('甩头识别：甩够就触发、不要求回正，回正不算反向；�
   assert.deepEqual(run(t => flickQ('left', t < 600 ? t - 200 : t - 700)), ['left']);
   assert.equal(run(() => [0, 0, 0, 0]).length, 0, '无效四元数被忽略');
   // 0.8.9：轻甩 6° 也能触发（不用猛甩），四个方向一样；读数 57 次/秒时同样
-  for (const dir of ['left', 'right', 'up', 'down']) assert.deepEqual(run(t => flickQ(dir, t - 200, 6, 120, 200)), [dir], `轻甩 ${dir}`);
+  for (const dir of ['left', 'right', 'up', 'down']) assert.deepEqual(run(t => flickQ(dir, t - 700, 6, 120, 200)), [dir], `轻甩 ${dir}`);
   const fast = fn => { const d = createShakeDetector(); const out = []; for (let t = 0; t <= 1500; t += 17) { const e = d.feed(T0 + t, fn(t)); if (e) out.push(e.dir); } return out; };
-  assert.deepEqual(fast(t => flickQ('up', t - 200, 7, 150, 200)), ['up'], '57Hz 轻甩');
+  assert.deepEqual(fast(t => flickQ('up', t - 700, 7, 150, 200)), ['up'], '57Hz 轻甩');
   const both = (yaw, pitch) => qMul(qAxis([1, 0, 0], pitch), qMul(qAxis([0, 0, 1], yaw), BASE_Q));
   assert.deepEqual(fast(t => both(1.5 * Math.sin(t / 300), 4 * Math.sin(t / 1000 * 4 * Math.PI))), [], '走路时上下来回晃');
   assert.deepEqual(fast(t => both(Math.min(40, t / 45), 0)), [], '慢慢转头看东西');
@@ -933,10 +933,11 @@ test('甩头识别 0.8.10：上下门槛更低、一摆只判一次、每次尝�
   const light = (dir, amp, go = 120) => {
     const d = createShakeDetector();
     const out = [];
-    for (let t = 0; t <= 1500; t += 17) { const e = d.feed(T0 + t, flickQ(dir, t - 400, amp, go, 200)); if (e) out.push(e.dir); }
+    for (let t = 0; t <= 1500; t += 17) { const e = d.feed(T0 + t, flickQ(dir, t - 700, amp, go, 200)); if (e) out.push(e.dir); }
     return out;
   };
-  for (const dir of ['up', 'down']) assert.deepEqual(light(dir, 4), [dir], `上下轻点 4° ${dir}`);
+  for (const dir of ['up', 'down']) assert.deepEqual(light(dir, 5.5), [dir], `上下轻点 5.5° ${dir}（0.8.14 起按幅度，门槛 4.5°）`);
+  for (const dir of ['up', 'down']) assert.deepEqual(light(dir, 3.5), [], `上下 3.5° 不触发 ${dir}`);
   assert.deepEqual(light('left', 5), ['left'], '左右 5°');
   assert.deepEqual(light('left', 3.5), [], '左右 3.5° 仍不触发：转头看东西不会误甩');
   // 走路颠簸 2–8°，上下门槛降低后仍不误触
@@ -975,6 +976,46 @@ test('甩头识别 0.8.11：同一毫秒成批送到的读数只跳过，不清�
   }
 });
 
+test('甩头识别 0.8.14：上下按幅度判定，抬一下头/点一下头就触发，不看快慢；回正、慢慢看东西、走路晃不触发', () => {
+  const pitchQ = deg => qMul(qAxis([1, 0, 0], deg), BASE_Q);
+  const both = (yaw, pitch) => qMul(qAxis([1, 0, 0], pitch), qMul(qAxis([0, 0, 1], yaw), BASE_Q));
+  const run = (fn, ms = 3000, step = 17, trace) => {
+    const d = createShakeDetector({ trace });
+    const out = [];
+    for (let t = 0; t <= ms; t += step) { const e = d.feed(T0 + t, fn(t)); if (e) out.push(e.dir); }
+    return out;
+  };
+  // 从 400 ms 起用 go 毫秒偏到 amp 度，停 hold 毫秒，再用 back 毫秒回正
+  const move = (amp, go, hold = 300, back = 300) => t => {
+    const m = t - 800;
+    const k = m < 0 ? 0 : m < go ? m / go : m < go + hold ? 1 : m < go + hold + back ? 1 - (m - go - hold) / back : 0;
+    return amp * k;
+  };
+  for (const [amp, go] of [[6, 150], [6, 300], [8, 250], [12, 400], [5, 180]]) {
+    assert.deepEqual(run(t => pitchQ(move(amp, go)(t))), ['up'], `抬头 ${amp}° 用 ${go} ms`);
+    assert.deepEqual(run(t => pitchQ(move(-amp, go)(t))), ['down'], `点头 ${amp}° 用 ${go} ms`);
+  }
+  // 平均才 15–20°/s 的轻抬，0.8.13 的角速度门槛（起算 20°/s）抓不到，现在按幅度能触发
+  assert.deepEqual(run(t => pitchQ(move(6, 350)(t))), ['up'], '慢一点的轻抬');
+  // 抬上去停 2 秒再放下：放下不算向下
+  assert.deepEqual(run(t => pitchQ(move(8, 200, 2000, 400)(t)), 4000), ['up']);
+  // 连着点两次头（中间回正）都算
+  assert.deepEqual(run(t => pitchQ(move(-7, 180, 200, 250)(t) + move(-7, 180, 200, 250)(t - 1500)), 3500), ['down', 'down']);
+  // 慢慢低头看东西：30° 用 5 秒
+  assert.deepEqual(run(t => pitchQ(-Math.min(30, t / 167)), 6000), [], '慢慢低头');
+  // 走路上下晃（2 Hz、±2–8°），30 Hz 和 57 Hz 都不误触
+  for (const a of [2, 3, 4, 6, 8]) for (const step of [17, 33]) {
+    assert.deepEqual(run(t => both(1.5 * Math.sin(t / 300), a * Math.sin(t / 1000 * 4 * Math.PI)), 4000, step), [], `走路 ±${a}° 每 ${step} ms`);
+  }
+  // 左右甩不带出上下，斜着转头不判上下
+  assert.deepEqual(run(t => flickQ('left', t - 400, 10, 120, 200)), ['left']);
+  assert.deepEqual(run(t => both(move(12, 200)(t), move(6, 200)(t))), ['left'], '斜向以左右为主');
+  // 每次上下尝试报一行
+  const tries = [];
+  run(t => pitchQ(move(6, 200)(t)), 3000, 17, e => tries.push(e));
+  assert.ok(tries.some(e => e.axis === 'pitch' && e.result === 'up' && e.ep >= 4.5));
+});
+
 function homeHarness(store, log) {
   const h = harness({ store, log });
   h.run(800);
@@ -986,9 +1027,9 @@ function homeHarness(store, log) {
   const pet = h.app.view.pet;
   // 停在待机、没有传送
   pet.tp = null; pet.act = 'idle'; pet.actUntil = h.app.view.now + 600000;
-  h.flick = dir => {
-    // 真机读数是连续的：先给一小段静止读数再甩
-    for (let t = -300; t < 600; t += 33) { h.step(33); h.app.motion(h.app.view.now, flickQ(dir, t - 100)); }
+  h.flick = (dir, lead = 700) => {
+    // 真机读数是连续的：先给一段静止读数再甩（0.8.14 上下判定要先攒 600 ms 基准）；接着上一下连续甩时 lead 给 0
+    for (let t = -lead; t < 600; t += 33) { h.step(33); h.app.motion(h.app.view.now, flickQ(dir, t - 100)); }
   };
   return h;
 }
@@ -1032,8 +1073,8 @@ test('晃一晃：上下甩立即生效（0.8.9 不再响应点头）；离开�
   const { app, run } = h;
   const v = app.view;
   v.pet.corner = 0;
-  // 0.8.10：读数刚开始的 pre 毫秒只用来看“是不是在颠”，先给 400 毫秒静止读数
-  for (let t = -400; t < 330; t += 33) { h.step(33); app.motion(v.now, flickQ('down', t - 60)); }
+  // 读数刚开始先给 700 毫秒静止读数（0.8.14 上下判定要先攒 600 ms 基准）
+  for (let t = -700; t < 330; t += 33) { h.step(33); app.motion(v.now, flickQ('down', t - 60)); }
   assert.equal(v.pet.tp && v.pet.tp.kind, 'shake', '下甩直接移动');
   assert.equal(v.pet.tp.to, 2, '左上 → 左下');
   assert.equal(app.nod, undefined, '没有点头入口');
@@ -1060,7 +1101,7 @@ test('晃一晃 0.8.10：飞行途中再甩一下，落地接着飞；转头时�
   v.pet.corner = 3;   // 右下
   h.flick('left');
   assert.equal(v.pet.tp && v.pet.tp.to, 5, '第一下：右下 → 下中');
-  h.flick('left');
+  h.flick('left', 300);
   assert.ok(logs.includes('shake held left'), '飞行途中的第二下先记着');
   assert.ok(logs.includes('shake queued left'), '落地后接着执行');
   assert.equal(v.pet.tp && v.pet.tp.kind, 'shake');
