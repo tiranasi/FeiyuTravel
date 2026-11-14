@@ -1016,6 +1016,33 @@ test('甩头识别 0.8.14：上下按幅度判定，抬一下头/点一下头就
   assert.ok(tries.some(e => e.axis === 'pitch' && e.result === 'up' && e.ep >= 4.5));
 });
 
+test('甩头识别 0.8.15：点头前往反方向带一下的小起势不算晃动（真机 0.8.14 大半快速点头被判 swing）', () => {
+  const pitchQ = deg => qMul(qAxis([1, 0, 0], deg), BASE_Q);
+  // 真机约 33 次/秒、点头峰值 100–300°/s：先往反方向带 wind 度，再 go 毫秒点到 amp 度，回正
+  const nod = (amp, wind, go) => t => {
+    const m = t - 1000;
+    if (m < -120) return 0;
+    if (m < 0) return wind * Math.sin((m + 120) / 120 * Math.PI / 2);
+    const k = m < go ? m / go : m < go + 150 ? 1 : m < go + 400 ? 1 - (m - go - 150) / 250 : 0;
+    return wind * Math.max(0, 1 - m / go) + amp * k;
+  };
+  for (const [amp, wind, go] of [[-15, 2.5, 60], [-10, 3, 80], [12, -2.5, 70], [8, -2, 100], [-6, 1.5, 120]]) {
+    const tries = [];
+    const d = createShakeDetector({ trace: e => tries.push(e.result) });
+    const out = [];
+    for (let t = 0; t <= 3000; t += 30) { const e = d.feed(T0 + t, pitchQ(nod(amp, wind, go)(t))); if (e) out.push(e.dir); }
+    assert.deepEqual(out, [amp > 0 ? 'up' : 'down'], `${amp}° 起势 ${wind}° ${go} ms：${tries.join(',')}`);
+  }
+  // 每 1.5 秒连点三次（同向、带起势）都算
+  const d = createShakeDetector();
+  const out = [];
+  for (let t = 0; t <= 6000; t += 30) {
+    const p = nod(-10, 2, 70)(t) + nod(-10, 2, 70)(t - 1500) + nod(-10, 2, 70)(t - 3000);
+    const e = d.feed(T0 + t, pitchQ(p)); if (e) out.push(e.dir);
+  }
+  assert.deepEqual(out, ['down', 'down', 'down']);
+});
+
 function homeHarness(store, log) {
   const h = harness({ store, log });
   h.run(800);
