@@ -245,7 +245,7 @@ function fakeCtx(stats) {
 
 
 // 测试宿主：假时钟、假计时器、可观察的聆听与朗读。
-function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', vision = null } = {}) {
+function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', vision = null, log } = {}) {
   let clock = T0;
   const timers = [];
   class FakeCanvas { constructor(w, h) { this.w = w; this.h = h; } getContext() { return { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {}, flush() {} }; } }
@@ -266,6 +266,7 @@ function harness({ store = new Map(), voiceReply = '[惊讶]你来啦！', visio
     },
     chat: { create: async system => { h.systems.push(system); return {}; }, prompt: async (session, text) => { h.prompts.push(text); return typeof voiceReply === 'function' ? voiceReply(text) : voiceReply; }, destroy() {} },
     vision,
+    log,
     speech: { speak(text) { h.spoken.push(text); h.speaking = true; }, stop() { h.speaking = false; } }
   });
   const stats = {};
@@ -895,8 +896,38 @@ test('甩头识别：甩够就触发、不要求回正，回正不算反向；�
   assert.deepEqual(fast(t => both(Math.min(40, t / 45), 0)), [], '慢慢转头看东西');
 });
 
-function homeHarness(store) {
-  const h = harness({ store });
+test('甩头识别 0.8.10：上下门槛更低、一摆只判一次、每次尝试报一行、lean 跟头走', () => {
+  const light = (dir, amp, go = 120) => {
+    const d = createShakeDetector();
+    const out = [];
+    for (let t = 0; t <= 1500; t += 17) { const e = d.feed(T0 + t, flickQ(dir, t - 400, amp, go, 200)); if (e) out.push(e.dir); }
+    return out;
+  };
+  for (const dir of ['up', 'down']) assert.deepEqual(light(dir, 4), [dir], `上下轻点 4° ${dir}`);
+  assert.deepEqual(light('left', 5), ['left'], '左右 5°');
+  assert.deepEqual(light('left', 3.5), [], '左右 3.5° 仍不触发：转头看东西不会误甩');
+  // 走路颠簸 2–8°，上下门槛降低后仍不误触
+  for (const a of [2, 3, 4, 6, 8]) {
+    const d = createShakeDetector();
+    let n = 0;
+    for (let t = 0; t <= 3000; t += 33) if (d.feed(T0 + t, qMul(qAxis([1, 0, 0], a * Math.sin(t / 1000 * 4 * Math.PI)), BASE_Q))) n += 1;
+    assert.ok(n <= (a === 2 ? 1 : 0), `走路上下 ±${a}°`);
+  }
+  const tries = [];
+  const d = createShakeDetector({ trace: e => tries.push(e) });
+  const leans = [];
+  for (let t = 0; t <= 1500; t += 17) {
+    d.feed(T0 + t, flickQ('left', t - 400, 8, 150, 300));
+    if (t >= 500 && leans.length === 0) leans.push(d.lean().x);
+  }
+  leans.push(d.lean().x);
+  assert.ok(tries.some(e => e.result === 'left' && e.axis === 'yaw' && e.peakY > 28), '触发那次报了峰值角速度');
+  assert.ok(leans[0] > 2, '甩的途中 lean 朝左');
+  assert.ok(Math.abs(leans[1]) < 0.5, '头停下 lean 回零');
+});
+
+function homeHarness(store, log) {
+  const h = harness({ store, log });
   h.run(800);
   h.app.view.title.focus = 0;
   h.app.confirm();
@@ -907,7 +938,8 @@ function homeHarness(store) {
   // 停在待机、没有传送
   pet.tp = null; pet.act = 'idle'; pet.actUntil = h.app.view.now + 600000;
   h.flick = dir => {
-    for (let t = 0; t < 600; t += 33) { h.step(33); h.app.motion(h.app.view.now, flickQ(dir, t - 100)); }
+    // 真机读数是连续的：先给一小段静止读数再甩
+    for (let t = -300; t < 600; t += 33) { h.step(33); h.app.motion(h.app.view.now, flickQ(dir, t - 100)); }
   };
   return h;
 }
@@ -951,7 +983,8 @@ test('晃一晃：上下甩立即生效（0.8.9 不再响应点头）；离开�
   const { app, run } = h;
   const v = app.view;
   v.pet.corner = 0;
-  for (let t = 0; t < 330; t += 33) { h.step(33); app.motion(v.now, flickQ('down', t - 60)); }
+  // 0.8.10：读数刚开始的 pre 毫秒只用来看“是不是在颠”，先给 400 毫秒静止读数
+  for (let t = -400; t < 330; t += 33) { h.step(33); app.motion(v.now, flickQ('down', t - 60)); }
   assert.equal(v.pet.tp && v.pet.tp.kind, 'shake', '下甩直接移动');
   assert.equal(v.pet.tp.to, 2, '左上 → 左下');
   assert.equal(app.nod, undefined, '没有点头入口');
@@ -968,6 +1001,34 @@ test('晃一晃：上下甩立即生效（0.8.9 不再响应点头）；离开�
   assert.equal(app.wantsMotion(), false);
   assert.equal(Game.normalize(JSON.parse(JSON.stringify(v.g)), T0).settings.motion, false, '关闭会保存');
   assert.equal(Game.normalize({}, T0).settings.motion, true, '默认打开');
+});
+
+test('晃一晃 0.8.10：飞行途中再甩一下，落地接着飞；转头时她跟着偏，停下弹回', () => {
+  const logs = [];
+  const h = homeHarness(undefined, (...a) => logs.push(a.join(' ')));
+  const { app, run } = h;
+  const v = app.view;
+  v.pet.corner = 3;   // 右下
+  h.flick('left');
+  assert.equal(v.pet.tp && v.pet.tp.to, 5, '第一下：右下 → 下中');
+  h.flick('left');
+  assert.ok(logs.includes('shake held left'), '飞行途中的第二下先记着');
+  assert.ok(logs.includes('shake queued left'), '落地后接着执行');
+  assert.equal(v.pet.tp && v.pet.tp.kind, 'shake');
+  assert.deepEqual([v.pet.tp.from, v.pet.tp.to], [5, 2], '落地后接着飞到左下');
+  assert.equal(v.imu.queued, null);
+  assert.ok(logs.some(l => l.startsWith('shake try ') && l.includes('"result":"left"')), '每次尝试有一行日志');
+  run(1500);
+  assert.equal(v.pet.corner, 2);
+  // 慢慢转头（不触发移动）：她往同侧偏几像素，头停下回到原位
+  v.pet.act = 'idle'; v.pet.actUntil = v.now + 600000;
+  const yawQ = deg => qMul(qAxis([0, 0, 1], deg), BASE_Q);
+  for (let t = 0; t < 400; t += 33) { h.step(33); app.motion(v.now, yawQ(t / 60)); }
+  assert.equal(v.pet.tp, null, '慢转头不移动');
+  assert.ok(v.imu.leanDraw.x < -1, '头往左，她往左偏');
+  assert.ok(v.imu.leanDraw.x >= -8, '偏移有上限');
+  for (let t = 0; t < 1200; t += 33) { h.step(33); app.motion(v.now, yawQ(400 / 60)); }
+  assert.ok(Math.abs(v.imu.leanDraw.x) < 0.5, '停下弹回');
 });
 
 test('首页新待机：每个动作和每种甩法都能在 6 个停靠点绘制', () => {

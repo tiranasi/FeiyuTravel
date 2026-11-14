@@ -1,4 +1,11 @@
-# 旅行肥鱼 设计与验证记录（0.8.9，2026-11-13）
+# 旅行肥鱼 设计与验证记录（0.8.10，2026-11-14）
+
+0.8.10（佩戴者反馈 0.8.9 “上下甩不够明显，左右甩有时不够丝滑”，只从体验出发改了四处）：
+- **上下门槛单独放低**：上下起算 20°/s、偏出 3.5° 即触发（左右 28°/s、4.5°）。同时“一摆只判一次”：候选被否掉后要等这一摆停下才再起算，走路颠簸不会在半程被重新起算成一次甩头。
+- **飞行途中甩头不丢**：她正在被甩飞时又甩一下，先记着，落地立即接着飞（1.5 秒内有效，只记最后一下）。
+- **跟头轻偏**：待机时她随头的转动往同侧偏几像素（横 ≤8、竖 ≤6），头停下弹回；甩之前就能看到她“被带动”。只是画面反馈，不触发移动。
+- **每次尝试一行日志** `shake try`：轴、平滑角速度峰值、两轴偏移、用时、结果（方向 / small / slow / swing / warmup / return），真机按它再调阈值。
+- 真机手感仍待佩戴者复测。
 
 0.8.9：
 - **不再响应系统点头**：上下轻甩常被系统判成点头、把她叫出来，和“晃一晃”冲突。页面只记录 `head gesture`，呼唤改用底栏“呼唤”或语音唤醒。上下甩不再等 280 ms。
@@ -204,11 +211,20 @@
 | `tools-art/souvenir.py` | 从 souvenir-postcard 生成 `lib/gift-data.js`（18 个 `gift_*`，长边 96px，8 位）与 `lib/card-data.js`（18 张 `card_<地点>_<n>`，408×184，4 位亮度两像素一字节）：`PYTHONPATH=build/pylibs python tools-art/souvenir.py`，预览输出到 `build/art/souvenir/` |
 | `tools-art/convert.py` | 生成 `lib/sprite-data.js`（只含载入页全息像 holo）；旧的正常色三视图转换移到 `--colour`，只输出到 `build/art` |
 | `web/lvfeiyu.html` | 本机预览外壳（`npm run dev`，`?fast=1`），不打入 AIX |
-| `tests/lvfeiyu.test.mjs` | 39 项测试（含亲密度、回忆、晃一晃轻甩）：纪念品图标与明信片插画（按需 4 位解码、文案对应、动效白名单）、图鉴详情、设置弹窗与快速旅行、规则、存档、分批解码、首页、教程、朗读与聆听互斥、看看（成功/取消/无权限/无宿主）、相机模块、旅行通话（拨号、提示词、挂断、次数上限、到家挂断、信号飘走）、全流程冒烟 |
+| `tests/lvfeiyu.test.mjs` | 41 项测试（含亲密度、回忆、晃一晃轻甩与 0.8.10 判定、飞行中补甩、跟头轻偏）：纪念品图标与明信片插画（按需 4 位解码、文案对应、动效白名单）、图鉴详情、设置弹窗与快速旅行、规则、存档、分批解码、首页、教程、朗读与聆听互斥、看看（成功/取消/无权限/无宿主）、相机模块、旅行通话（拨号、提示词、挂断、次数上限、到家挂断、信号飘走）、全流程冒烟 |
 
 渲染只用义眼盯真真机上已画出的 Canvas 能力：rgba、globalAlpha、虚线、clip、路径、弧线、贝塞尔曲线、measureText，以及 `drawImage(缓存Canvas, x, y, w, h)`。`npm run check` 会拒绝 `ctx.scale / rect / ellipse / translate / transform` 和 `lighter` 混合；冒烟测试用白名单假 ctx 走完所有画面。
 
 ## 晃一晃：IMU 体感（0.8.0 已接入，真机待验证）
+
+**0.8.10 判定**（在 0.8.9 之上）：
+- 起算：左右平滑角速度 ≥ 28°/s，或上下 ≥ 20°/s（`startV`）。触发幅度：左右 4.5°（`minAmp`），上下 3.5°（`minAmpV`）。主轴仍按原始度数比较、须是另一轴的 1.4 倍。
+- 平均速度从主轴真正开始动（偏出 0.3°）算起，不被 `lead` 回溯的静止段摊薄；否则 120 ms 内的 4° 轻点会被当成慢转头。
+- 一摆只判一次（`armed`）：候选因 small / slow / swing 被否后，平滑角速度回落到起算线以下才再起算。0.8.9 在被否后立刻在半程重新起算，±4° 的 2 Hz 颠簸会因此误触。
+- 起点前除了“刚从这个方向摆回来超过 2.5°”，再加“头已在反侧超过 4°（`swing×fore`）”也算颠簸。读数刚开始的 100 ms（`warm`）看不到起点之前，不触发。
+- `lean()`：头相对 150 ms 慢基线的偏移（度）。`app.js` 的 `tickLean` 按 1.6 px/° 换算、限幅、70 ms 平滑后存 `v.imu.leanDraw`，`drawHome` 待机时只偏人不偏投影台；传送、晕、离开首页时归零。
+- 飞行途中被拒（`busy` 且是 `shake`）的甩头存 `v.imu.queued`，落地那一帧若 1.5 秒内有效就 `applyShake`；日志 `shake held` / `shake queued`。
+- 模拟（`tests/lvfeiyu.test.mjs`、57 Hz）：上下 4° / 120 ms、5° / 200 ms 触发；左右 5° / 120 ms 触发，3.5° 不触发；上下 ±3–8° 的 2 Hz 颠簸不触发（±2° 只在读数刚开始时可能误触一次）。
 
 **0.8.9 判定**（用户要求“触发更稳健、不用猛甩”，同时移除点头）：
 - 角速度先做指数平滑（`smooth: 0.5`），平滑后任一轴 ≥ 28°/s 才起算，单个跳变读数不会起算。
@@ -220,7 +236,7 @@
 **0.8.0 实现**（2026-11-13，批次 J/K 原画到位后接入）：
 - 识别在 `lib/motion.js`（纯计算，可测试）。只用 `AbsoluteOrientationSensor`：左右取相邻两次姿态的相对旋转在世界竖直轴上的分量，与设备哪根轴朝前无关；上下取设备 +Z 的仰角变化。方向反了改 `yawSign/pitchSign`，阈值见 `SHAKE`。`Accelerometer` 暂未使用。
 - 页面 `pages/home/index.ink` 每帧问 `app.wantsMotion()`（首页、她在场、设置“体感互动”打开），需要时才 `new AbsoluteOrientationSensor({ frequency: 30 })`，离开首页、`onHide`、`onUnload` 立即 `stop()`；构造或启动失败 30 秒后才重试。
-- 日志：`motion start`、`motion first reading`、每 10 秒 `imu stats`（读数次数与最大左右/上下角速度）、`shake detected`、`shake`、`shake ignored <方向> <原因>`、`motion stop <原因> <读数次数>`。
+- 日志：`motion start`、`motion first reading`、每 10 秒 `imu stats`（读数次数与最大左右/上下角速度）、`shake try`（0.8.10 起取代 `shake detected`）、`shake`、`shake held/queued`、`shake ignored <方向> <原因>`、`motion stop <原因> <读数次数>`。
 - 停靠点 4 → 6（新增上中、下中，`CORNERS[4/5]`）；`lib/app.js` 的 `applyShake` 按 3 列 × 2 行网格移动，走出网格就撞墙。6 秒内第 3 次甩 → 晕 3 秒（`dizzy`）→ 生气 2.6 秒（`pout`），期间不响应。停在中间时下次换位优先回角落。
 - （0.8.0–0.8.8）上下甩识别后先等 280 ms，期间系统点头送达就让给点头。0.8.9 起不再响应点头，这条规则已删除。
 - 绘制在 `lib/scenes.js` 的 `drawShake`：起飞 `shake_lift` → 飞行 `shake_fly` → 翻滚 `shake_tumble_a/b` 及镜像 → 刹车 `shake_brake` → `chase_land`；上甩 `shake_float`，下甩 `chase_jump`；撞墙 `shake_bump` 横向压扁 0.9。残影 2 层、速度线、落地灰尘、撞击线由程序画。
