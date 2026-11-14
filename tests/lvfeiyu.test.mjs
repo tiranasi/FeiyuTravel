@@ -1043,6 +1043,40 @@ test('甩头识别 0.8.15：点头前往反方向带一下的小起势不算晃�
   assert.deepEqual(out, ['down', 'down', 'down']);
 });
 
+test('甩头识别 0.8.16：又大又快的点头（≥10°、0.3 秒内）不做晃动检查；一个来回取第一下；走路和慢低头仍不触发', () => {
+  const pitchQ = deg => qMul(qAxis([1, 0, 0], deg), BASE_Q);
+  const run = (fn, ms, step = 33) => {
+    const tries = [];
+    const d = createShakeDetector({ trace: e => tries.push(e) });
+    const out = [];
+    for (let t = 0; t <= ms; t += step) { const e = d.feed(T0 + t, pitchQ(fn(t))); if (e) out.push(e.dir); }
+    return { out, tries };
+  };
+  // 真机 0.8.15：17–39° 的点头多被判 swing。这里点头前 0.6 秒头先上下晃过一下（±2.8°，0.8.15 的周期晃动规则会拒）
+  const nod = (amp, go) => t => {
+    if (t >= 400 && t < 1000) return 2.8 * Math.sin((t - 400) / 600 * 2 * Math.PI);
+    const m = t - 1000;
+    if (m < 0) return 0;
+    return amp * (m < go ? m / go : m < go + 150 ? 1 : m < go + 400 ? 1 - (m - go - 150) / 250 : 0);
+  };
+  for (const [amp, go] of [[-20, 80], [25, 100], [-35, 120], [17, 60], [-12, 70], [11, 90]]) {
+    const r = run(nod(amp, go), 3000);
+    assert.deepEqual(r.out, [amp > 0 ? 'up' : 'down'], `${amp}° ${go} ms：${r.tries.map(e => e.result).join(',')}`);
+    assert.ok(r.tries.some(e => e.big === 1 && Array.isArray(e.raw) && e.raw.length > 3), `${amp}° 走快速大点头路径并附原始仰角`);
+  }
+  // 同样晃过之后的 7° 小点头仍按晃动拒掉（小幅的规则不变）
+  assert.deepEqual(run(nod(-7, 80), 3000).out, []);
+  // 一个来回点头（±25°，0.7 秒）：只算第一下；回来那一下按回正忽略
+  for (const a of [25, -25]) {
+    const yesYes = t => (t < 1000 || t > 1700) ? 0 : a * Math.sin((t - 1000) / 700 * 2 * Math.PI);
+    assert.deepEqual(run(yesYes, 4000).out, [a > 0 ? 'up' : 'down']);
+  }
+  // 慢慢低头 30°（每秒 6°）不算
+  assert.deepEqual(run(t => -Math.min(30, Math.max(0, t - 1000) / 167), 7000).out, []);
+  // 走路上下晃 ±10°、2 Hz，30 Hz 和 57 Hz 都不误触
+  for (const step of [17, 33]) assert.deepEqual(run(t => 10 * Math.sin(t / 1000 * 4 * Math.PI), 6000, step).out, []);
+});
+
 function homeHarness(store, log) {
   const h = harness({ store, log });
   h.run(800);
@@ -1061,7 +1095,7 @@ function homeHarness(store, log) {
   return h;
 }
 
-test('晃一晃：甩向相邻停靠点，边上撞墙弹回，连甩三次会晕再生气，期间不响应', () => {
+test('晃一晃：甩向相邻停靠点，边上撞墙弹回，8 秒内连甩五次会晕再生气，期间不响应', () => {
   const h = homeHarness();
   const { app, run } = h;
   const v = app.view;
@@ -1070,19 +1104,26 @@ test('晃一晃：甩向相邻停靠点，边上撞墙弹回，连甩三次会�
   h.flick('left');
   assert.equal(v.pet.tp && v.pet.tp.kind, 'shake');
   assert.deepEqual([v.pet.tp.dir, v.pet.tp.to, v.pet.tp.bump], ['left', 5, false]);
-  run(1200);
+  run(900);
   assert.equal(v.pet.corner, 5, '到了下中');
   assert.equal(v.pet.tp, null);
   h.flick('up');
   run(100);
   assert.equal(v.pet.tp.to, 4, '到了上中');
-  run(1200);
+  run(900);
   assert.equal(v.pet.corner, 4);
   h.flick('up');
   run(400);
   assert.ok(v.pet.tp.bump, '最上面再往上：撞墙');
   assert.equal(v.pet.tp.to, 4);
-  assert.ok(v.pet.dizzyNext, '6 秒内第三次');
+  assert.ok(!v.pet.dizzyNext, '0.8.16：8 秒内第 3 次还不晕');
+  h.flick('right', 200);
+  run(400);
+  assert.ok(!v.pet.dizzyNext, '第 4 次还不晕');
+  run(400);
+  h.flick('right', 200);
+  run(400);
+  assert.ok(v.pet.dizzyNext, '8 秒内第 5 次（撞墙也算）');
   run(1200);
   assert.equal(v.pet.act, 'dizzy');
   h.flick('left');
