@@ -954,7 +954,7 @@ test('明信片上限（0.8.24）：最多 30 张，超出时先删最老的重�
   assert.equal(u.postcards[0].line, '认不出的话 1');
 });
 
-test('明信片收集进度（0.8.21）：旧档补齐、新画面提示、超出上限不倒退；打开和翻页朗读、返回停止', () => {
+test('明信片收集进度（0.8.21）：旧档补齐、新画面提示、超出上限不倒退；打开即读、翻页停留 0.6 秒再读、连翻只读最后一张、返回停止', () => {
   // 旧档没有 cardsSeen：从现有明信片补齐，重复的只算一种，无效的丢掉
   const old = Game.normalize({ v: 1, postcards: [
     { dest: 'moon', at: 1, line: DESTS.find(d => d.id === 'moon').lines[0] },
@@ -989,8 +989,32 @@ test('明信片收集进度（0.8.21）：旧档补齐、新画面提示、超�
   h.app.confirm();
   assert.equal(v.screen, 'postcard');
   assert.equal(h.spoken.at(-1), speechText(DESTS[2].lines[1]), '打开最新一张就朗读');
+  const said = h.spoken.length;
   h.app.swipe(1);
-  assert.equal(h.spoken.at(-1), speechText(DESTS[1].lines[1]), '翻页读下一张');
+  assert.equal(h.spoken.length, said, '翻页后不立刻朗读');
+  h.run(400);
+  assert.equal(h.spoken.length, said, '停留不到 0.6 秒不朗读');
+  h.run(400);
+  assert.equal(h.spoken.at(-1), speechText(DESTS[1].lines[1]), '停留后读这一张');
+  // 快速连翻：只读最后停下的那张（1.0.1）
+  const before = h.spoken.length;
+  h.app.swipe(1);
+  h.run(200);
+  h.app.swipe(1);
+  h.run(200);
+  h.app.swipe(1);
+  h.run(800);
+  const n = v.g.postcards.length;
+  assert.deepEqual(h.spoken.slice(before), [speechText(v.g.postcards[n - 1 - v.menu.focus].line)], '连翻只读最后一张');
+  // 翻页后立刻返回：不再朗读
+  h.app.swipe(1);
+  const pending = h.spoken.length;
+  assert.ok(h.app.back());
+  h.run(800);
+  assert.equal(h.spoken.length, pending, '返回后取消待读');
+  assert.equal(v.screen, 'menu');
+  h.app.confirm();
+  assert.equal(v.screen, 'postcard');
   assert.ok(h.app.back());
   assert.equal(v.screen, 'menu');
   assert.equal(h.speaking, false, '返回列表停止朗读');
