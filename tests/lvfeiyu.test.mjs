@@ -132,18 +132,18 @@ test('关闭期间完成出发、明信片、归来', () => {
   const events = Game.settle(s, T0 + 10 * MIN, rng);
   assert.equal(events[0].type, 'depart');
   assert.ok(DESTS.find(d => d.id === s.trip.dest).tier === 0);
-  assert.equal(s.trip.cards.length, 3, '罗盘多寄两张');
+  assert.equal(s.trip.cards.length, 2, '罗盘多寄一张');
   const later = Game.settle(s, T0 + 24 * 60 * MIN, rng);
-  assert.deepEqual(later.map(e => e.type), ['shell', 'postcard', 'postcard', 'postcard', 'return']);
-  assert.equal(s.postcards.length, 3);
-  assert.equal(s.unread, 3);
+  assert.deepEqual(later.map(e => e.type), ['shell', 'postcard', 'postcard', 'return']);
+  assert.equal(s.postcards.length, 2);
+  assert.equal(s.unread, 2);
   assert.ok(s.pending && s.pending.scales >= 20 && s.pending.scales <= 40);
   const before = s.scales;
   const gift = Game.claimGift(s);
   assert.equal(s.scales, before + gift.scales);
   assert.equal(s.souvenirs[gift.gift], 1);
   Game.readPostcard(s, 0);
-  assert.equal(s.unread, 2);
+  assert.equal(s.unread, 1);
 });
 
 test('远途时长与好运贝壳提高稀有度', () => {
