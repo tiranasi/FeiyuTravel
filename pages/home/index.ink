@@ -45,7 +45,10 @@ const FRAME_MS = 40;
 const WAKE_GUARD_MS = 2500;
 const ASR_IDLE_MS = 1500;
 const ASR_SILENCE_MS = 8000;
+// 发布版开关：scripts/aix.mjs 打包时默认改成 true（加 --dev 保留）。发布版关掉 trace 调试日志、忽略页面调试参数。
+const RELEASE = false;
 const log = (...args) => console.log('[LVFY]', ...args);
+const trace = RELEASE ? () => {} : log;
 const errorText = error => String(error && (error.message || error.name) || error || 'unknown');
 
 function parseQuery(rawQuery) {
@@ -93,7 +96,7 @@ function listen(handlers) {
     handlers.onEnd(heard());
   };
   const stop = () => {
-    try { recognition.stop(); } catch (error) { log('asr stop', errorText(error)); }
+    try { recognition.stop(); } catch (error) { trace('asr stop', errorText(error)); }
     setTimeout(finish, 600);
   };
   recognition.onresult = event => {
@@ -133,7 +136,7 @@ function listen(handlers) {
       if (idleTimer) clearTimeout(idleTimer);
       if (silenceTimer) clearTimeout(silenceTimer);
       recognition.onresult = null; recognition.onerror = null; recognition.onend = null;
-      try { recognition.abort ? recognition.abort() : recognition.stop(); } catch (error) { log('asr abort', errorText(error)); }
+      try { recognition.abort ? recognition.abort() : recognition.stop(); } catch (error) { trace('asr abort', errorText(error)); }
     }
   };
 }
@@ -152,9 +155,9 @@ const speech = {
     if (!synth || !Utterance) { log('tts unavailable'); return; }
     const token = ++this.token;
     const utterance = new Utterance(value);
-    try { utterance.voice = TTS_VOICE; utterance.volume = TTS_VOLUME; } catch (error) { log('tts option', errorText(error)); }
+    try { utterance.voice = TTS_VOICE; utterance.volume = TTS_VOLUME; } catch (error) { trace('tts option', errorText(error)); }
     const fallback = () => {
-      try { synth.speak(utterance, 'immediate'); log('tts speak', value.length); } catch (error) { log('tts speak failed', errorText(error)); }
+      try { synth.speak(utterance, 'immediate'); trace('tts speak', value.length); } catch (error) { log('tts speak failed', errorText(error)); }
     };
     if (typeof synth.synthesize === 'function' && typeof SpeechAudioPlayer !== 'undefined') {
       try {
@@ -164,10 +167,10 @@ const speech = {
           const player = new SpeechAudioPlayer(task);
           this.player = player;
           player.play();
-          log('tts play', value.length, String(task.state || ''));
+          trace('tts play', value.length, String(task.state || ''));
           setTimeout(() => {
             if (this.player !== player) return;
-            try { log('tts state', JSON.stringify({ paused: player.paused, t: player.currentTime, d: player.duration })); } catch (error) { /* ignore */ }
+            try { trace('tts state', JSON.stringify({ paused: player.paused, t: player.currentTime, d: player.duration })); } catch (error) { /* ignore */ }
           }, 2500);
         }).catch(error => {
           log('tts synthesize failed', errorText(error));
@@ -189,7 +192,7 @@ const speech = {
       if (typeof player.stop === 'function') player.stop();
       if (typeof player.destroy === 'function') player.destroy();
     } catch (error) {
-      log('tts stop ignored', errorText(error));
+      trace('tts stop ignored', errorText(error));
     }
   }
 };
@@ -201,7 +204,7 @@ const chat = {
     return LanguageModel.create({ initialPrompts: [{ role: 'system', content: system }] });
   },
   prompt(session, question, ms) { return withTimeout(session.prompt(question), ms); },
-  destroy(session) { try { if (session && session.destroy) session.destroy(); } catch (error) { log('session destroy', errorText(error)); } }
+  destroy(session) { try { if (session && session.destroy) session.destroy(); } catch (error) { trace('session destroy', errorText(error)); } }
 };
 
 // 看看（识图）：拍照路径与带图提问格式沿用义眼盯真真机走通的实现。
@@ -210,7 +213,7 @@ const vision = {
   shoot(options) {
     const started = Date.now();
     return capturePhoto(wx, options, log).then(photo => {
-      log('look captured', JSON.stringify({ ms: Date.now() - started, bytes: photo.buffer.byteLength, source: photo.source }));
+      trace('look captured', JSON.stringify({ ms: Date.now() - started, bytes: photo.buffer.byteLength, source: photo.source }));
       return shrinkPhoto(photo, IMAGE_MAX_EDGE, IMAGE_QUALITY, log);
     }).then(photo => toDataUrl(photo, wx, log));
   },
@@ -218,7 +221,7 @@ const vision = {
   prompt(session, question, url, ms) {
     const started = Date.now();
     return withTimeout(session.prompt([{ role: 'user', content: [{ type: 'text', text: question }, { type: 'image_url', image_url: { url } }] }]), ms)
-      .then(raw => { log('look model', JSON.stringify({ ms: Date.now() - started })); return raw; });
+      .then(raw => { trace('look model', JSON.stringify({ ms: Date.now() - started })); return raw; });
   },
   destroy(session) { chat.destroy(session); }
 };
@@ -237,7 +240,7 @@ export default {
   costSum: 0,
 
   onLoad(rawQuery) {
-    const query = parseQuery(rawQuery);
+    const query = RELEASE ? {} : parseQuery(rawQuery);
     log('load', JSON.stringify(query));
     const storage = {
       get: key => wx.getStorageSync(key),
@@ -252,6 +255,7 @@ export default {
       storage,
       decoder,
       log,
+      trace,
       timeScale: query.debug === 'fast' ? 120 : 1,
       recall: query.recall === '1',
       setTimeout: (fn, ms) => setTimeout(fn, ms),
@@ -262,7 +266,7 @@ export default {
       speech
     });
     if (typeof this.enableWorldAwareness === 'function') {
-      try { this.enableWorldAwareness(); log('world awareness on'); } catch (error) { log('world awareness unavailable', errorText(error)); }
+      try { this.enableWorldAwareness(); trace('world awareness on'); } catch (error) { log('world awareness unavailable', errorText(error)); }
     }
     this.demoShake = query.demo === 'shake';
     this.visible = true;
@@ -307,7 +311,7 @@ export default {
         state.timer = setTimeout(feed, 33);
       };
       this.motion = state;
-      log('motion demo start');
+      trace('motion demo start');
       feed();
       return;
     }
@@ -330,7 +334,7 @@ export default {
       if (this.motion !== state || !this.app) return;
       const q = sensor.quaternion;
       const value = q && q.length === 4 ? [q[0], q[1], q[2], q[3]] : null;
-      if (!state.count) log('motion first reading', JSON.stringify(value && value.map(x => Math.round(x * 1000) / 1000)), Date.now() - state.at, 'ms');
+      if (!state.count) trace('motion first reading', JSON.stringify(value && value.map(x => Math.round(x * 1000) / 1000)), Date.now() - state.at, 'ms');
       state.count += 1;
       this.app.motion(Date.now(), value);
     };
@@ -349,7 +353,7 @@ export default {
       return;
     }
     this.motion = state;
-    log('motion start', MOTION_HZ);
+    trace('motion start', MOTION_HZ);
   },
   stopMotion(reason) {
     const m = this.motion;
@@ -360,7 +364,7 @@ export default {
       try { m.sensor.removeEventListener('reading', m.onReading); m.sensor.removeEventListener('error', m.onError); } catch (error) { /* ignore */ }
       try { m.sensor.stop(); } catch (error) { log('motion stop failed', errorText(error)); }
     }
-    log('motion stop', reason, m.count, 'samples', Math.round((Date.now() - m.at) / 100) / 10, 's');
+    trace('motion stop', reason, m.count, 'samples', Math.round((Date.now() - m.at) / 100) / 10, 's');
   },
   loop() {
     if (!this.visible || !this.ready || this.timer !== null || !this.app) return;
@@ -390,12 +394,12 @@ export default {
   onHeadGesture(event) {
     const gesture = event && (event.gesture || event.type);
     // 0.8.9 起不再响应系统点头：上下轻甩常被系统判成点头，和“晃一晃”冲突。只记日志。
-    log('head gesture', String(gesture));
+    trace('head gesture', String(gesture));
   },
   onVoiceWakeup(event) {
     if (!this.visible || !this.app) return;
     if (event && event.preventDefault) event.preventDefault();
-    if (Date.now() - this.shownAt < WAKE_GUARD_MS) { log('wake ignored: launch guard'); return; }
+    if (Date.now() - this.shownAt < WAKE_GUARD_MS) { trace('wake ignored: launch guard'); return; }
     log('voice wakeup');
     this.app.voiceWake();
   },
@@ -407,7 +411,7 @@ export default {
   onKeyUp(event) {
     if (!this.app) return;
     const c = event && (event.code || event.key || event.keyCode);
-    log('key', String(c), this.app.view.screen);
+    trace('key', String(c), this.app.view.screen);
     const isBack = c === 'Backspace' || c === 'Escape' || c === 'Back' || c === 'GoBack' || c === 4 || c === 8 || c === 27;
     if (isBack) {
       const handled = this.app.back();

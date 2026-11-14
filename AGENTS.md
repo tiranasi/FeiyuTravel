@@ -27,7 +27,7 @@
 - 晃一晃（0.8.0）：甩头识别在 `lib/motion.js`（纯计算），页面按 `app.wantsMotion()` 启停 `AbsoluteOrientationSensor`，离开首页必须 `stop()`。停靠点 `CORNERS` 有 6 个（4 角 + 上中/下中），朝向用 `faceRight(corner)`，不要再用 `corner % 2`。新待机加在 `app.js` 的 `ACT_WEIGHT`、`scenes.js` 的 `petPose`/`petEffects`、`content.js` 的 `IDLE_MUTTER`。`demo=shake` 只用于检查画面。
 - 画精灵一律用 `draw.js` 的 `blit()`，不要直接 `ctx.drawImage`：真机上 drawImage 会乘上当前 fillStyle 的透明度（0.7.1 实测），blit 先把 fillStyle 设成不透明黑。
 - 只使用真机已画出的 Canvas 方法；`npm run check` 会扫描禁用调用，并运行 `tests/lvfeiyu.test.mjs`。
-- 本目录是 Git 仓库，远端为 GitHub `tiranasi/FeiyuTravel`。修改后运行 `npm run check`，然后提交并推送。`npm run install -- --params '{"debug":"fast"}'` 安装并以 120 倍时间启动；加 `"reset":"1"` 清档。
+- 本目录是 Git 仓库，远端为 GitHub `tiranasi/FeiyuTravel`。修改后运行 `npm run check`，然后提交并推送。`pack` / `install` 默认打发布版（1.0.0 起：关掉 `trace` 调试日志、去掉页面调试参数）；调试用 `node scripts/aix.mjs install --dev --params '{"debug":"fast"}'` 安装开发版并以 120 倍时间启动，加 `"reset":"1"` 清档。新增日志时，错误和关键流程用 `log`，高频或带用户原文的用 `trace`。
 - 设备结论按“截图已渲染 / 日志已执行 / 佩戴者反馈”分别记录。
 - 旧页面 `pages/canvas`、`pages/index` 保留不删，但不再打包。`web/` 只剩当前游戏的本机预览（`lvfeiyu.html`、`lvfeiyu-preview.js`、`lvfeiyu.css`、`serve.mjs`）；霓潮、完整玩法、全息动画等旧 HTML 原型及其 lib（pet-*、game-engine/render/state、pocket、hologram-*）已按用户要求移除，回溯查 Git 历史 c330577 及以前。浏览器里旧原型的存档（IndexedDB/localStorage）不在仓库里，没有被清除。
 

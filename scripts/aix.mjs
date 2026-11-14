@@ -9,6 +9,8 @@ const stage=path.join(root,'build/staging');
 const mode=process.argv[2]||'check';
 const option=name=>{const i=process.argv.indexOf('--'+name);return i<0?undefined:process.argv[i+1];};
 const serial=option('serial')||'1906092618121455';
+// 默认打发布版：关掉 trace 调试日志、去掉页面调试参数（schema）。--dev 保留调试能力。
+const dev=process.argv.includes('--dev');
 function run(command,args,capture=false,input){
   const r=spawnSync(command,args,{cwd:root,encoding:'utf8',input,stdio:capture?'pipe':'inherit',maxBuffer:16*1024*1024});
   if(r.error)throw r.error;
@@ -50,6 +52,7 @@ async function prepare(){
   for(const name of ['app.json','app.js','AGENTS.md'])await fs.cp(path.join(root,name),path.join(stage,name));
   await fs.mkdir(path.join(stage,'pages/home'),{recursive:true});
   await fs.cp(path.join(root,'pages/home/index.ink'),path.join(stage,'pages/home/index.ink'));
+  if(!dev)await release(path.join(stage,'pages/home/index.ink'));
   await fs.mkdir(path.join(stage,'lib'),{recursive:true});
   for(const file of LIB)await fs.cp(path.join(root,'lib',file),path.join(stage,'lib',file));
   await fs.mkdir(path.join(stage,'.aix'),{recursive:true});
@@ -57,6 +60,20 @@ async function prepare(){
   const def=JSON.parse(aix(['show',stage,'--compact'],true));
   assert.equal(def.agentId,'develop.rokid.agent.lvfeiyu-20261112');
   console.log('Prepared independent agent '+def.agentId);
+}
+async function release(file){
+  let ink=await fs.readFile(file,'utf8');
+  const flag='const RELEASE = false;';
+  assert.equal(ink.split(flag).length,2,'RELEASE flag must appear once');
+  ink=ink.replace(flag,'const RELEASE = true;');
+  const block=/(<script def>)([\s\S]*?)(<\/script>)/;
+  const def=JSON.parse(ink.match(block)[2]);
+  delete def.schema;
+  const eol=ink.includes('\r\n')?'\r\n':'\n';
+  ink=ink.replace(block,(m,a,b,c)=>a+eol+JSON.stringify(def,null,2).replace(/\n/g,eol)+eol+c);
+  assert.ok(!/"schema"/.test(ink.match(block)[2]),'release page must not expose debug params');
+  await fs.writeFile(file,ink);
+  console.log('Release build: trace logs off, debug params removed');
 }
 function closePage(){
   for(let i=0;i<4;i++){run('adb',['-s',serial,'shell','input','keyevent','4'],true);run('adb',['-s',serial,'shell','sleep','0.3'],true);}
@@ -73,7 +90,7 @@ async function main(){
   if(mode==='check')return;
   await fs.mkdir(path.join(root,'dist'),{recursive:true});
   const app=JSON.parse(await fs.readFile(path.join(root,'app.json'),'utf8'));
-  const artifact=path.join(root,`dist/lvfeiyu-${app.version}.aix`);
+  const artifact=path.join(root,`dist/lvfeiyu-${app.version}${dev?'-dev':''}.aix`);
   aix(['pack',stage,'-o',artifact]);
   const list=aix(['list',artifact],true);
   for(const file of LIB)assert.ok(list.includes('lib/'+file),file);
