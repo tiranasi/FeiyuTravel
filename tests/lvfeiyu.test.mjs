@@ -926,6 +926,22 @@ test('甩头识别 0.8.10：上下门槛更低、一摆只判一次、每次尝�
   assert.ok(Math.abs(leans[1]) < 0.5, '头停下 lean 回零');
 });
 
+test('甩头识别 0.8.11：同一毫秒成批送到的读数只跳过，不清零（真机 0.8.10 因此丢了大半甩头）', () => {
+  const yawQ = deg => qMul(qAxis([0, 0, 1], deg), BASE_Q);
+  const k = ms => ms < 0 ? 0 : ms < 120 ? ms / 120 : ms < 320 ? 1 - (ms - 120) / 200 : 0;
+  for (const back of [0, 3]) {
+    const res = [];
+    const d = createShakeDetector({ trace: e => res.push(e.result) });
+    let t = 0;
+    for (let i = 1; t < 2000; i += 1) {
+      const dup = i % 3 === 0;
+      if (!dup) t += 30;
+      d.feed(T0 + t - (dup ? back : 0), yawQ(7 * k(t - 800)));
+    }
+    assert.deepEqual(res, ['left'], `每 3 条有 1 条同毫秒/略早（${back} ms）`);
+  }
+});
+
 function homeHarness(store, log) {
   const h = harness({ store, log });
   h.run(800);
