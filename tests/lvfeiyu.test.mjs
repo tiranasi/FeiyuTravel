@@ -53,6 +53,27 @@ test('存档读写往返', () => {
   assert.equal(Game.save(broken, s, T0), false);
 });
 
+test('浮光贝点位（0.8.12）：旧档按数量补点位，单颗捡起，满了捡掉一颗重新计时，新贝补最小空位', () => {
+  const old = Game.normalize({ v: 1, shells: { count: 3, lastAt: T0 } }, T0);
+  assert.deepEqual(old.shells.spots, [0, 1, 2]);
+  const s = Game.newState(T0);
+  s.shells = { count: 4, lastAt: T0 - 999 * MIN, spots: [0, 1, 2, 3] };
+  const before = s.scales;
+  const got = Game.pickShell(s, 2, T0, Game.makeRng(3));
+  assert.ok(got >= 8 && got <= 20);
+  assert.equal(s.scales, before + got);
+  assert.deepEqual(s.shells.spots, [0, 1, 3]);
+  assert.equal(s.shells.count, 3);
+  assert.equal(s.shells.lastAt, T0, '满了时捡掉一颗，从现在起重新计时');
+  assert.equal(Game.pickShell(s, 2, T0, Game.makeRng(3)), 0, '空点位捡不到');
+  Game.settle(s, T0 + 46 * MIN, Game.makeRng(1));
+  assert.deepEqual(s.shells.spots, [0, 1, 3, 2], '新贝长在空出来的点位');
+  const again = Game.normalize(JSON.parse(JSON.stringify(s)), T0);
+  assert.deepEqual(again.shells.spots, [0, 1, 3, 2], '点位随存档保存');
+  Game.collectShells(s, T0, Game.makeRng(1));
+  assert.deepEqual(s.shells.spots, []);
+});
+
 test('浮光贝离线生长并封顶', () => {
   const s = Game.newState(T0);
   s.shells = { count: 0, lastAt: T0 };
@@ -1045,6 +1066,31 @@ test('晃一晃 0.8.10：飞行途中再甩一下，落地接着飞；转头时�
   assert.ok(v.imu.leanDraw.x >= -8, '偏移有上限');
   for (let t = 0; t < 1200; t += 33) { h.step(33); app.motion(v.now, yawQ(400 / 60)); }
   assert.ok(Math.abs(v.imu.leanDraw.x) < 0.5, '停下弹回');
+});
+
+test('晃一晃 0.8.12：甩飞途中碰到浮光贝顺手捡起；换位到下中也会捡', () => {
+  const h = homeHarness();
+  const { app, run } = h;
+  const v = app.view;
+  v.g.shells = { count: 4, lastAt: v.now, spots: [0, 1, 2, 3] };
+  const scales = v.g.scales;
+  v.pet.corner = 0;   // 左上
+  h.flick('right');
+  run(1500);
+  assert.equal(v.pet.corner, 4, '飞到上中');
+  assert.deepEqual(v.g.shells.spots, [1, 2, 3], '路过左上方的那颗被捡起');
+  assert.ok(v.g.scales > scales);
+  assert.ok(v.toast && v.toast.text.includes('顺手捡到浮光贝'));
+  assert.ok(v.shellPops.some(p => p.spot === 0), '有捡起的光圈');
+  assert.ok(v.dock.some(d => d.label === '拾贝×3'), '底栏数量跟着变');
+  // 自己换位到下中，脚边两颗都捡到
+  v.pet.tp = { kind: 'move', from: 4, to: 5, at: v.now };
+  run(1500);
+  assert.deepEqual(v.g.shells.spots, [1]);
+  // 撞墙和普通停在角落不捡
+  v.pet.tp = null; v.pet.corner = 1; v.pet.act = 'idle'; v.pet.actUntil = v.now + 600000;
+  run(400);
+  assert.deepEqual(v.g.shells.spots, [1]);
 });
 
 test('首页新待机：每个动作和每种甩法都能在 6 个停靠点绘制', () => {
