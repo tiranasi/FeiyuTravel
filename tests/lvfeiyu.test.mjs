@@ -9,7 +9,7 @@ import { SPRITES } from '../lib/sprite-data.js';
 import { QBAN } from '../lib/qban-data.js';
 import { capturePhoto, bytesToBase64 } from '../lib/camera.js';
 import { discoverFrame } from '../lib/scenes.js';
-import { DESTS, ITEMS, speechText, cardArtId, IDLE_MUTTER, AFFINITY, LINES, systemPrompt, touchLines, affinityMutter, affinityLevel } from '../lib/content.js';
+import { DESTS, ITEMS, speechText, cardArtId, IDLE_MUTTER, AFFINITY, LINES, systemPrompt, touchLines, affinityMutter, affinityLevel, TUTORIAL } from '../lib/content.js';
 import { createShakeDetector, qAxis, qMul } from '../lib/motion.js';
 import { CORNERS } from '../lib/scenes.js';
 
@@ -400,7 +400,9 @@ test('教程：每步需要真实操作，完成后记录并进入载入动画',
   assert.ok(h.app.back(), '返回步骤消费返回键');
   h.run(1000);
   assert.equal(h.app.view.tut.step, 3);
-  for (let i = 3; i < 6; i += 1) { h.run(500); h.app.confirm(); }
+  h.run(500); h.app.confirm();
+  assert.equal(h.app.view.tut.step, 4, '第五步：晃一晃');
+  for (let i = 4; i < 7; i += 1) { h.run(500); h.app.confirm(); }
   assert.equal(h.app.view.screen, 'boot');
   assert.equal(h.app.view.g.tutorialDone, true);
   h.run(7000);
@@ -410,6 +412,42 @@ test('教程：每步需要真实操作，完成后记录并进入载入动画',
   assert.equal(h.app.view.screen, 'title');
   assert.equal(h.app.view.title.focus, 0);
   assert.equal(JSON.parse(h.store.get(Game.SAVE_KEY)).tutorialDone, true);
+});
+
+test('教程晃一晃：只在这一步要传感器；甩两下过关，边上撞墙也算；轻点可跳过；关了体感也能继续', () => {
+  const h = harness();
+  const { app } = h;
+  const v = app.view;
+  h.run(800);
+  app.confirm();
+  assert.equal(app.wantsMotion(), false, '其它教程步骤不要传感器');
+  v.tut.step = 3; h.run(500); app.confirm();
+  assert.equal(v.tut.step, 4);
+  assert.equal(TUTORIAL[4].goal, 'shake');
+  assert.ok(!/晕/.test(TUTORIAL[4].text), '晕是彩蛋，教程不说');
+  assert.equal(app.wantsMotion(), true);
+  const flick = (dir, lead = 700) => { for (let t = -lead; t < 600; t += 33) { h.step(33); app.motion(v.now, flickQ(dir, t - 100)); } };
+  flick('down');
+  assert.equal(v.tut.shakes, 1);
+  assert.deepEqual([v.tut.dir, v.tut.bump, v.tut.cell], ['down', true, [1, 1]], '起点在下中，下甩撞边');
+  h.run(1200);
+  flick('left');
+  assert.deepEqual([v.tut.dir, v.tut.bump, v.tut.cell], ['left', false, [0, 1]]);
+  assert.ok(v.tut.okAt, '两下过关');
+  assert.equal(app.wantsMotion(), false, '过关后释放传感器');
+  h.run(1000);
+  assert.equal(v.tut.step, 5);
+  // 轻点跳过
+  v.tut.step = 3; h.run(500); app.confirm();
+  assert.equal(v.tut.step, 4);
+  h.run(500); app.confirm();
+  assert.equal(v.tut.step, 5, '轻点跳过晃一晃');
+  // 关了体感：不要传感器，轻点继续
+  v.g.settings.motion = false;
+  v.tut.step = 3; h.run(500); app.confirm();
+  assert.equal(app.wantsMotion(), false);
+  h.run(500); app.confirm();
+  assert.equal(v.tut.step, 5);
 });
 
 test('教程中途返回回到首页，不记录完成', () => {
