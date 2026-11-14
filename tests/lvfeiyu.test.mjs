@@ -930,6 +930,48 @@ test('明信片列表：进入和移动焦点就预先解码当前与前后各�
   assert.ok(v.cache[cardArtId(cards[3])], '移动焦点后预解码下一张');
 });
 
+test('明信片收集进度（0.8.21）：旧档补齐、新画面提示、超出 40 张不倒退；打开和翻页朗读、返回停止', () => {
+  // 旧档没有 cardsSeen：从现有明信片补齐，重复的只算一种，无效的丢掉
+  const old = Game.normalize({ v: 1, postcards: [
+    { dest: 'moon', at: 1, line: DESTS.find(d => d.id === 'moon').lines[0] },
+    { dest: 'moon', at: 2, line: DESTS.find(d => d.id === 'moon').lines[0] },
+    { dest: 'market', at: 3, line: '不认识的话' }
+  ], cardsSeen: ['card_moon_1', 'hack'] }, T0);
+  assert.deepEqual(old.cardsSeen, ['card_moon_1']);
+  assert.equal(Game.CARD_FACES.length, 18);
+  // 寄回时标出新画面；记录不随 40 张上限丢失
+  const s = Game.newState(T0);
+  const rng = Game.makeRng(5);
+  Game.buy(s, 'compass');
+  Game.togglePack(s, 'onigiri', T0, rng);
+  Game.togglePack(s, 'compass', T0, rng);
+  Game.settle(s, T0 + 10 * MIN, rng);
+  const cards = Game.settle(s, T0 + 24 * 60 * MIN, rng).filter(e => e.type === 'postcard');
+  const faces = new Set(s.postcards.map(cardArtId));
+  assert.equal(s.cardsSeen.length, faces.size);
+  assert.equal(cards.filter(e => e.fresh).length, faces.size, '每种画面第一次寄回时标 fresh');
+  s.postcards = [];
+  assert.equal(Game.normalize(JSON.parse(JSON.stringify(s)), T0).cardsSeen.length, faces.size, '明信片被挤掉后进度不倒退');
+  // 朗读
+  const h = harness();
+  h.run(800);
+  const v = h.app.view;
+  v.g.postcards = DESTS.slice(0, 3).map((dest, i) => ({ dest: dest.id, at: T0 + i, line: dest.lines[1], pose: 'side', read: false }));
+  v.screen = 'home';
+  v.pet.tp = null;
+  v.dockFocus = v.dock.findIndex(d => d.id === 'album');
+  h.app.confirm();
+  h.spoken.length = 0;
+  h.app.confirm();
+  assert.equal(v.screen, 'postcard');
+  assert.equal(h.spoken.at(-1), speechText(DESTS[2].lines[1]), '打开最新一张就朗读');
+  h.app.swipe(1);
+  assert.equal(h.spoken.at(-1), speechText(DESTS[1].lines[1]), '翻页读下一张');
+  assert.ok(h.app.back());
+  assert.equal(v.screen, 'menu');
+  assert.equal(h.speaking, false, '返回列表停止朗读');
+});
+
 // ---------------------------------------------------------------- 晃一晃（0.8.0）
 const BASE_Q = qAxis([1, 0, 0], 90);   // 设备 -Z 朝前、水平（0.8.17 真机核对）
 function flickQ(dir, ms, amp = 15, go = 110, back = 170) {
