@@ -53,41 +53,53 @@ test('存档读写往返', () => {
   assert.equal(Game.save(broken, s, T0), false);
 });
 
-test('浮光贝点位（0.8.12）：旧档按数量补点位，单颗捡起，满了捡掉一颗重新计时，新贝补最小空位', () => {
+test('浮光贝位置（0.8.13）：旧档换成原固定位置，新贝在活动范围内随机长，单颗捡起，满了捡掉一颗重新计时', () => {
   const old = Game.normalize({ v: 1, shells: { count: 3, lastAt: T0 } }, T0);
-  assert.deepEqual(old.shells.spots, [0, 1, 2]);
+  assert.deepEqual(old.shells.spots, [{ x: 168, y: 58 }, { x: 312, y: 62 }, { x: 214, y: 250 }]);
+  const v12 = Game.normalize({ v: 1, shells: { count: 2, lastAt: T0, spots: [3, 1] } }, T0);
+  assert.deepEqual(v12.shells.spots, [{ x: 268, y: 246 }, { x: 312, y: 62 }], '0.8.12 的点位编号');
   const s = Game.newState(T0);
-  s.shells = { count: 4, lastAt: T0 - 999 * MIN, spots: [0, 1, 2, 3] };
+  s.shells = { count: 0, lastAt: T0 - 999 * MIN, spots: [] };
+  Game.settle(s, T0, Game.makeRng(5));
+  assert.equal(s.shells.spots.length, Game.SHELL_MAX);
+  const [zone] = Game.SHELL_ZONES;
+  for (const p of s.shells.spots) assert.ok(p.x >= zone.x[0] && p.x <= zone.x[1] && p.y >= zone.y[0] && p.y <= zone.y[1], JSON.stringify(p));
   const before = s.scales;
-  const got = Game.pickShell(s, 2, T0, Game.makeRng(3));
-  assert.ok(got >= 8 && got <= 20);
+  const target = s.shells.spots[2];
+  const got = Game.pickShell(s, { ...target }, T0, Game.makeRng(3));
+  assert.ok(got >= 4 && got <= 8, '单颗 4–8 鳞光');
   assert.equal(s.scales, before + got);
-  assert.deepEqual(s.shells.spots, [0, 1, 3]);
-  assert.equal(s.shells.count, 3);
+  assert.equal(s.shells.count, 7);
   assert.equal(s.shells.lastAt, T0, '满了时捡掉一颗，从现在起重新计时');
-  assert.equal(Game.pickShell(s, 2, T0, Game.makeRng(3)), 0, '空点位捡不到');
-  Game.settle(s, T0 + 46 * MIN, Game.makeRng(1));
-  assert.deepEqual(s.shells.spots, [0, 1, 3, 2], '新贝长在空出来的点位');
+  assert.equal(Game.pickShell(s, target, T0, Game.makeRng(3)), 0, '已捡走的捡不到');
+  Game.settle(s, T0 + 21 * MIN, Game.makeRng(1));
+  assert.equal(s.shells.count, 8);
   const again = Game.normalize(JSON.parse(JSON.stringify(s)), T0);
-  assert.deepEqual(again.shells.spots, [0, 1, 3, 2], '点位随存档保存');
+  assert.deepEqual(again.shells.spots, s.shells.spots, '位置随存档保存');
   Game.collectShells(s, T0, Game.makeRng(1));
   assert.deepEqual(s.shells.spots, []);
+  // 随机分布：多次生长，左右上下都会出现，不是固定几个点
+  const rng = Game.makeRng(9);
+  const xs = [], ys = [];
+  for (let i = 0; i < 200; i += 1) { const p = Game.randomShellSpot(rng, []); xs.push(p.x); ys.push(p.y); }
+  assert.ok(Math.min(...xs) < 90 && Math.max(...xs) > 390 && Math.min(...ys) < 90 && Math.max(...ys) > 230);
+  assert.ok(new Set(xs.map((x, i) => `${x},${ys[i]}`)).size > 150);
 });
 
 test('浮光贝离线生长并封顶', () => {
   const s = Game.newState(T0);
   s.shells = { count: 0, lastAt: T0 };
-  Game.settle(s, T0 + 44 * MIN, Game.makeRng(1));
+  Game.settle(s, T0 + 19 * MIN, Game.makeRng(1));
   assert.equal(s.shells.count, 0);
-  Game.settle(s, T0 + 95 * MIN, Game.makeRng(1));
+  Game.settle(s, T0 + 45 * MIN, Game.makeRng(1));
   assert.equal(s.shells.count, 2);
   Game.settle(s, T0 + 30 * 60 * MIN, Game.makeRng(1));
   assert.equal(s.shells.count, Game.SHELL_MAX);
   const got = Game.collectShells(s, T0 + 30 * 60 * MIN, Game.makeRng(2));
-  assert.ok(got >= 8 * Game.SHELL_MAX && got <= 20 * Game.SHELL_MAX);
+  assert.ok(got >= 4 * Game.SHELL_MAX && got <= 8 * Game.SHELL_MAX);
   assert.equal(s.shells.count, 0);
   // 收满后从收取时刻重新计时
-  Game.settle(s, T0 + 30 * 60 * MIN + 44 * MIN, Game.makeRng(3));
+  Game.settle(s, T0 + 30 * 60 * MIN + 19 * MIN, Game.makeRng(3));
   assert.equal(s.shells.count, 0);
 });
 
@@ -1072,25 +1084,49 @@ test('晃一晃 0.8.12：甩飞途中碰到浮光贝顺手捡起；换位到下�
   const h = homeHarness();
   const { app, run } = h;
   const v = app.view;
-  v.g.shells = { count: 4, lastAt: v.now, spots: [0, 1, 2, 3] };
+  const P = [{ x: 168, y: 58 }, { x: 312, y: 62 }, { x: 214, y: 250 }, { x: 268, y: 246 }];
+  v.g.shells = { count: 4, lastAt: v.now, spots: P.map(p => ({ ...p })) };
   const scales = v.g.scales;
   v.pet.corner = 0;   // 左上
   h.flick('right');
   run(1500);
   assert.equal(v.pet.corner, 4, '飞到上中');
-  assert.deepEqual(v.g.shells.spots, [1, 2, 3], '路过左上方的那颗被捡起');
+  assert.deepEqual(v.g.shells.spots, P.slice(1), '路过左上方的那颗被捡起');
   assert.ok(v.g.scales > scales);
   assert.ok(v.toast && v.toast.text.includes('顺手捡到浮光贝'));
-  assert.ok(v.shellPops.some(p => p.spot === 0), '有捡起的光圈');
+  assert.ok(v.shellPops.some(p => p.spot.x === 168), '有捡起的光圈');
   assert.ok(v.dock.some(d => d.label === '拾贝×3'), '底栏数量跟着变');
   // 自己换位到下中，脚边两颗都捡到
   v.pet.tp = { kind: 'move', from: 4, to: 5, at: v.now };
   run(1500);
-  assert.deepEqual(v.g.shells.spots, [1]);
-  // 撞墙和普通停在角落不捡
+  assert.deepEqual(v.g.shells.spots, [P[1]]);
+  // 停在别的角落碰不到
   v.pet.tp = null; v.pet.corner = 1; v.pet.act = 'idle'; v.pet.actUntil = v.now + 600000;
   run(400);
-  assert.deepEqual(v.g.shells.spots, [1]);
+  assert.deepEqual(v.g.shells.spots, [P[1]]);
+});
+
+test('浮光贝 0.8.13：随机位置，长在她身上当场捡；上排、下排横向甩飞路过的都能捡到', () => {
+  const h = homeHarness();
+  const { app, run } = h;
+  const v = app.view;
+  const onHer = { x: 90, y: 120 }, top = { x: 330, y: 100 }, bottom = { x: 150, y: 236 }, far = { x: 430, y: 258 };
+  v.pet.corner = 0; v.pet.act = 'idle'; v.pet.actUntil = v.now + 600000;
+  v.g.shells = { count: 4, lastAt: v.now, spots: [onHer, top, bottom, far].map(p => ({ ...p })) };
+  run(100);
+  assert.deepEqual(v.g.shells.spots, [top, bottom, far], '长在她身上的那颗当场捡起');
+  v.pet.corner = 1;   // 右上 → 上中
+  h.flick('left');
+  run(1500);
+  assert.equal(v.pet.corner, 4);
+  assert.deepEqual(v.g.shells.spots, [bottom, far]);
+  v.pet.corner = 2; v.pet.act = 'idle'; v.pet.actUntil = v.now + 600000;   // 左下 → 下中
+  run(1600);
+  h.flick('right');
+  run(1500);
+  assert.equal(v.pet.corner, 5);
+  assert.deepEqual(v.g.shells.spots, [far]);
+  assert.ok(v.dock.some(d => d.label === '拾贝×1'));
 });
 
 test('首页新待机：每个动作和每种甩法都能在 6 个停靠点绘制', () => {
