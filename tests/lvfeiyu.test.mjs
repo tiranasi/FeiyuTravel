@@ -1093,6 +1093,38 @@ test('甩头识别 0.8.17：眼镜 +Z 朝向佩戴者——+Z 往上翻（低头
   assert.deepEqual(out, ['down']);
 });
 
+test('甩头识别 0.8.18：越过原位又大又快算反方向；前一个动作的回程不算晃动；斜着转头不再延迟补判（真机 0.8.17 日志）', () => {
+  const both = (yaw, pitch) => qMul(qAxis([1, 0, 0], pitch), qMul(qAxis([0, 0, 1], yaw), BASE_Q));
+  const seg = pts => t => {
+    if (t <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) if (t <= pts[i][0]) { const [a, va] = pts[i - 1]; const [b, vb] = pts[i]; return va + (vb - va) * (t - a) / (b - a); }
+    return pts[pts.length - 1][1];
+  };
+  const run = (pitchFn, yawFn = () => 0, ms = 7000) => {
+    const tries = [];
+    const d = createShakeDetector({ trace: e => { if (e.axis === 'pitch') tries.push(e.result + (e.cross ? '·cross' : '')); } });
+    const out = [];
+    for (let t = 0; t <= ms; t += 33) { const e = d.feed(T0 + t, both(yawFn(t), pitchFn(t))); if (e) out.push(e.dir); }
+    return { out, tries: tries.join(' ') };
+  };
+  const check = (pts, want, msg) => { const r = run(seg(pts)); assert.deepEqual(r.out, want, `${msg}：${r.tries}`); return r; };
+  // ① 低头后停在下面 1.5 秒，再快速越过原位抬到 +20°：算向上（真机 16:58:29）
+  assert.match(check([[0, 0], [1000, 0], [1080, -8], [1200, -11], [2700, -11], [2850, 0], [2950, 20], [3300, 20], [3600, 0]], ['down', 'up'], '越过原位抬头').tries, /up·cross/);
+  // 同样停住后回正、顺势抬过 5°：不算
+  check([[0, 0], [1000, 0], [1080, -8], [1200, -11], [2700, -11], [3000, 0], [3200, 5], [3800, 5], [4200, 0]], ['down'], '回正抬过头');
+  // 抬头后 0.6 秒内就越过原位低下去：按回正忽略，一个来回只算第一下
+  check([[0, 0], [1000, 0], [1100, 12], [1300, 12], [1450, 0], [1550, -12], [1900, -12], [2200, 0]], ['up'], '一个来回');
+  // ② 低头、回正时冲过 2.7°、紧接着再低头 17°：两次都算（真机 16:57:54，0.8.17 判 swing）
+  check([[0, 0], [1000, 0], [1080, -10], [1500, -10], [1800, 2.7], [2000, 2.5], [2300, -17], [2600, -17], [2900, 0]], ['down', 'down'], '回程后再点头');
+  // ③ 向左甩时带抬头 7°，停住后慢慢转回、俯仰保持：只算向左，不再在转回来时补判向上（真机 16:58:54，ms 3658）
+  const yawT = seg([[0, 0], [1000, 0], [1150, 30], [3500, 30], [5500, 0]]);
+  const r = run(seg([[0, 0], [1000, 0], [1150, 7]]), yawT);
+  assert.deepEqual(r.out, ['left'], r.tries);
+  assert.match(r.tries, /turn/);
+  // 走路 ±10–15°（停不稳，不算越过原位）仍不误触
+  for (const a of [10, 15]) assert.deepEqual(run(t => a * Math.sin(t / 1000 * 4 * Math.PI)).out, [], `走路 ±${a}°`);
+});
+
 function homeHarness(store, log) {
   const h = harness({ store, log });
   h.run(800);
