@@ -930,7 +930,31 @@ test('明信片列表：进入和移动焦点就预先解码当前与前后各�
   assert.ok(v.cache[cardArtId(cards[3])], '移动焦点后预解码下一张');
 });
 
-test('明信片收集进度（0.8.21）：旧档补齐、新画面提示、超出 40 张不倒退；打开和翻页朗读、返回停止', () => {
+test('明信片上限（0.8.24）：最多 30 张，超出时先删最老的重复画面，每种画面留最新一张', () => {
+  assert.equal(Game.POSTCARD_KEEP, 30);
+  const faces = DESTS.flatMap(dest => dest.lines.map(line => ({ dest: dest.id, line })));
+  // 最老的 18 张各不相同，之后 13 张都重复 market 第 1 句：共 31 张
+  const s = Game.newState(T0);
+  s.postcards = faces.map((f, i) => ({ ...f, at: T0 + i, pose: 'side', read: true }))
+    .concat(Array.from({ length: 13 }, (_, i) => ({ ...faces[0], at: T0 + 100 + i, pose: 'side', read: false })));
+  Game.trimPostcards(s);
+  assert.equal(s.postcards.length, 30);
+  assert.equal(s.postcards[0].line, faces[1].line, '删掉的是最老的那张重复画面（market 第 1 句的第一张）');
+  assert.equal(new Set(s.postcards.map(cardArtId)).size, 18, '18 种画面都还在');
+  // 读旧档：40 张裁到 30，先删重复
+  const old = Game.normalize({ v: 1, postcards: faces.concat(faces.slice(0, 22)).map((f, i) => ({ ...f, at: T0 + i, read: true })) }, T0);
+  assert.equal(old.postcards.length, 30);
+  assert.equal(new Set(old.postcards.map(cardArtId)).size, 18);
+  assert.equal(old.cardsSeen.length, 18);
+  // 都不重复时删最老的
+  const u = Game.newState(T0);
+  u.postcards = Array.from({ length: 31 }, (_, i) => ({ dest: 'market', line: `认不出的话 ${i}`, at: T0 + i, pose: 'side', read: true }));
+  Game.trimPostcards(u);
+  assert.equal(u.postcards.length, 30);
+  assert.equal(u.postcards[0].line, '认不出的话 1');
+});
+
+test('明信片收集进度（0.8.21）：旧档补齐、新画面提示、超出上限不倒退；打开和翻页朗读、返回停止', () => {
   // 旧档没有 cardsSeen：从现有明信片补齐，重复的只算一种，无效的丢掉
   const old = Game.normalize({ v: 1, postcards: [
     { dest: 'moon', at: 1, line: DESTS.find(d => d.id === 'moon').lines[0] },
@@ -939,7 +963,7 @@ test('明信片收集进度（0.8.21）：旧档补齐、新画面提示、超�
   ], cardsSeen: ['card_moon_1', 'hack'] }, T0);
   assert.deepEqual(old.cardsSeen, ['card_moon_1']);
   assert.equal(Game.CARD_FACES.length, 18);
-  // 寄回时标出新画面；记录不随 40 张上限丢失
+  // 寄回时标出新画面；记录不随张数上限丢失
   const s = Game.newState(T0);
   const rng = Game.makeRng(5);
   Game.buy(s, 'compass');
